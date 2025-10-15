@@ -1,150 +1,92 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>AI Talking Ghost</title>
-<style>
-  :root { --glow:#0ff; --bg:#000; --fg:#cfffff; }
-  html,body { height:100%; margin:0; background:#000; color:var(--fg); font-family:system-ui,-apple-system,Segoe UI,Roboto,Inter,Arial,sans-serif; }
-  .wrap { min-height:100%; display:grid; place-items:center; padding:24px; }
-  .stage { text-align:center; max-width:900px; width:100%; }
-  .ghost {
-    width:min(60vw,420px);
-    margin:auto;
-    filter: drop-shadow(0 0 30px var(--glow));
-    animation: float 4s ease-in-out infinite;
-  }
-  .subtitle {
-    min-height:2.5em; margin:20px auto 10px; font-size:clamp(18px,2.2vw,28px);
-    text-shadow:0 0 20px var(--glow), 0 0 6px var(--glow);
-  }
-  .btns { display:flex; gap:12px; justify-content:center; flex-wrap:wrap; margin-top:16px; }
-  button {
-    background:transparent; color:var(--glow); border:2px solid var(--glow);
-    padding:10px 18px; font-size:16px; border-radius:999px; cursor:pointer; transition:.2s;
-  }
-  button:hover { background:var(--glow); color:#000; }
-  .hint { opacity:.7; font-size:14px; margin-top:10px }
-  @keyframes float { 0%,100%{ transform:translateY(0)} 50%{ transform:translateY(-14px)} }
-</style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bob the Talking Skeleton</title>
+  <style>
+    body {
+      background-color: black;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      overflow: hidden;
+    }
+    #bob {
+      height: 80vh;
+      image-rendering: crisp-edges;
+      animation: fadeIn 1s ease-in-out;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+  </style>
 </head>
 <body>
-  <div class="wrap">
-    <div class="stage">
-      <!-- Simple SVG ghost (no external assets) -->
-      <svg class="ghost" viewBox="0 0 200 240" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-        <defs>
-          <radialGradient id="g" cx="50%" cy="35%" r="70%">
-            <stop offset="0%" stop-color="#ccffff" />
-            <stop offset="100%" stop-color="#66ffff" stop-opacity=".08" />
-          </radialGradient>
-        </defs>
-        <path d="M100 20c-38 0-70 28-70 78v98c0 10 10 16 19 11 8-4 16-3 23 2 9 7 21 7 30 0 7-5 15-6 23-2 9 5 19-1 19-11v-98c0-50-32-78-70-78z" fill="url(#g)" stroke="#8fffff" stroke-opacity=".4"/>
-        <circle cx="75" cy="90" r="10" fill="#000"/>
-        <circle cx="125" cy="90" r="10" fill="#000"/>
-        <path d="M70 125q30 20 60 0" fill="none" stroke="#002" stroke-width="6" stroke-linecap="round"/>
-      </svg>
+  <img id="bob" src="images/bobidle1.png" alt="Bob the Skeleton">
 
-      <div id="subtitle" class="subtitle">👻 Waiting to awaken…</div>
+  <script>
+    const bob = document.getElementById('bob');
 
-      <div class="btns">
-        <button id="talkBtn">Summon the Ghost</button>
-        <button id="stopBtn">Silence the Spirits</button>
-      </div>
-      <div class="hint">Tip: project this full-screen onto fabric or plexiglass for maximum spook.</div>
-      <div class="hint">Mic permission required. No API keys stored in the browser.</div>
-    </div>
-  </div>
+    const animations = {
+      idle: ['bobidle1.png', 'bobidle2.png', 'bobidlelookleft.png', 'bobidlelookright.png'],
+      talk: ['bobmouthclosed.png', 'bobmouthopenmid.png', 'bobmouthopen.png', 'bobmouthopenmid.png'],
+      wave: ['bobwavecenter.png', 'bobwaveleft.png', 'bobwaveright.png', 'bobwavecenter.png']
+    };
 
-<script>
-  // === CONFIG ===
-  // Point this at your proxy (see options below).
-  const PROXY_URL = "https://ghostaiv1.alexmkennell.workers.dev"; // e.g., /api/ghost on Vercel/Netlify/Worker
+    let state = 'idle';
+    let interval;
 
-  // === Speech-to-text (browser) ===
-  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-  const recognizer = SpeechRecognition ? new SpeechRecognition() : null;
-  if (recognizer) {
-    recognizer.lang = "en-US";
-    recognizer.interimResults = false;
-    recognizer.maxAlternatives = 1;
-  }
-
-  const subtitleEl = document.getElementById('subtitle');
-  const talkBtn = document.getElementById('talkBtn');
-  const stopBtn = document.getElementById('stopBtn');
-
-  let speaking = false;
-
-  function setSubtitle(text) {
-    subtitleEl.textContent = text;
-  }
-
-  function speak(text) {
-    // Browser TTS (no network)
-    if (!window.speechSynthesis) return;
-    const utter = new SpeechSynthesisUtterance(text);
-    // Pick a mildly spooky voice if available
-    const voices = speechSynthesis.getVoices();
-    const preferred = voices.find(v => /UK|Irish|Australian/i.test(v.name)) || voices[0];
-    if (preferred) utter.voice = preferred;
-    utter.rate = 0.95; // slightly slower = spookier
-    utter.pitch = 0.8;
-    speaking = true;
-    utter.onend = () => speaking = false;
-    window.speechSynthesis.cancel(); // stop any prior
-    window.speechSynthesis.speak(utter);
-  }
-
-  async function askGhost(prompt) {
-    const res = await fetch(PROXY_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ prompt })
-    });
-    if (!res.ok) throw new Error("Proxy error");
-    const data = await res.json();
-    return data.reply;
-  }
-
-  async function handleInteraction() {
-    if (!recognizer) {
-      setSubtitle("⚠️ Your browser doesn’t support speech recognition.");
-      return;
+    function play(animation, loop = false, callback) {
+      clearInterval(interval);
+      const frames = animations[animation];
+      let i = 0;
+      interval = setInterval(() => {
+        bob.src = `images/${frames[i]}`;
+        i++;
+        if (i >= frames.length) {
+          if (loop) i = 0;
+          else {
+            clearInterval(interval);
+            if (callback) callback();
+          }
+        }
+      }, 200);
     }
-    setSubtitle("🎙️ Listening…");
-    recognizer.start();
 
-    recognizer.onresult = async (e) => {
-      const userText = e.results[0][0].transcript;
-      setSubtitle(`🗣️ You: ${userText}`);
-      try {
-        const reply = await askGhost(userText);
-        setSubtitle(reply);
-        speak(reply);
-      } catch (err) {
-        console.error(err);
-        setSubtitle("👻 The veil is noisy… try again.");
+    function idleLoop() {
+      state = 'idle';
+      play('idle', true);
+    }
+
+    function talkLoop() {
+      state = 'talking';
+      play('talk', true);
+    }
+
+    function waveOnce() {
+      state = 'wave';
+      play('wave', false, idleLoop);
+    }
+
+    // Simulate a conversation for testing
+    function simulateConversation() {
+      if (state === 'idle') {
+        waveOnce();
+        setTimeout(() => {
+          talkLoop();
+          setTimeout(() => idleLoop(), 4000);
+        }, 1500);
       }
-    };
+    }
 
-    recognizer.onerror = (e) => {
-      setSubtitle("🙊 I heard only whispers…");
-      console.warn(e.error);
-    };
-  }
+    // Start idle on load
+    idleLoop();
 
-  talkBtn.addEventListener('click', handleInteraction);
-  stopBtn.addEventListener('click', () => {
-    if (speaking && window.speechSynthesis) window.speechSynthesis.cancel();
-    setSubtitle("🔕 The spirits grow quiet.");
-  });
-
-  // Load voices on some browsers
-  if ('speechSynthesis' in window) {
-    window.speechSynthesis.onvoiceschanged = () => {};
-  }
-</script>
+    // Click anywhere to simulate a conversation
+    document.body.addEventListener('click', simulateConversation);
+  </script>
 </body>
 </html>
