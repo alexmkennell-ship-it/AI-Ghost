@@ -1,54 +1,52 @@
 const bob = document.getElementById("bob");
 
-const animations = {
-  idle: ["bobidle1.png", "bobidle2.png", "bobidlelookleft.png", "bobidlelookright.png"],
-  wave: ["bobwavecenter.png", "bobwaveleft.png", "bobwaveright.png", "bobwavecenter.png"],
-  talk: ["bobmouthclosed.png", "bobmouthopenmid.png", "bobmouthopen.png", "bobmouthopenmid.png"],
+let state = "idle";
+let isTalking = false;
+
+// Preload models (optional, for smoother switching)
+const models = {
+  idle: "models/bob_idle.glb",
+  wave: "models/bob_wave.glb",
+  talk: "models/bob_talk.glb",
+  walk: "models/bob_walk.glb"
 };
 
-let state = "idle";
-let frame = 0;
-let animInterval = null;
-
-// --- Animation Function ---
-function playAnimation(type, loop = true, frameDelay = 200, callback = null) {
-  clearInterval(animInterval);
-  const frames = animations[type];
-  frame = 0;
-  state = type;
-
-  animInterval = setInterval(() => {
-    bob.src = `images/${frames[frame]}`;
-    frame++;
-
-    if (frame >= frames.length) {
-      if (loop) frame = 0;
-      else {
-        clearInterval(animInterval);
-        if (callback) callback();
-      }
-    }
-  }, frameDelay);
-}
-
-// --- Looping Animations ---
+// Idle looping behavior
 function startIdle() {
-  playAnimation("idle", true, 300);
+  state = "idle";
+  bob.src = models.idle;
+  randomIdleCycle();
 }
 
-function startConversation() {
-  // Wave once, then go into listen/talk mode
-  playAnimation("wave", false, 200, async () => {
-    // Ask user for prompt (temporary simple input)
-    const prompt = prompt("Ask Bob something spooky:");
-    if (prompt) await talkToAI(prompt);
-  });
+// Random silly idles
+function randomIdleCycle() {
+  const idleOptions = [models.idle, models.walk, models.wave];
+  setInterval(() => {
+    if (!isTalking && state === "idle") {
+      const next = idleOptions[Math.floor(Math.random() * idleOptions.length)];
+      bob.src = next;
+    }
+  }, 15000); // every 15s pick a random idle
 }
 
-// --- AI Connection ---
+// Conversation trigger
+document.body.addEventListener("click", async () => {
+  if (state === "idle") {
+    state = "wave";
+    bob.src = models.wave;
+
+    setTimeout(async () => {
+      const prompt = prompt("Ask Bob something spooky:");
+      if (prompt) await talkToAI(prompt);
+    }, 2000);
+  }
+});
+
+// Connect to AI worker and talk
 async function talkToAI(userInput) {
   try {
-    playAnimation("talk", true, 120);
+    isTalking = true;
+    bob.src = models.talk;
 
     const response = await fetch("https://ghostaiv1.alexmkennell.workers.dev/", {
       method: "POST",
@@ -60,26 +58,21 @@ async function talkToAI(userInput) {
     const data = await response.json();
     const reply = data.reply || "(eerie silence…)";
 
-    // Stop talking animation, log the reply
-    clearInterval(animInterval);
-    console.log("Bob says:", reply);
-
-    // Optional: Use speech synthesis
+    // Speak the reply
     const utterance = new SpeechSynthesisUtterance(reply);
     utterance.rate = 0.9;
     speechSynthesis.speak(utterance);
 
-    utterance.onend = () => startIdle();
+    utterance.onend = () => {
+      isTalking = false;
+      startIdle();
+    };
   } catch (err) {
     console.error("Error:", err);
+    isTalking = false;
     startIdle();
   }
 }
 
-// --- Start idle loop ---
+// Start everything
 startIdle();
-
-// --- Click anywhere to talk to Bob ---
-document.body.addEventListener("click", () => {
-  if (state === "idle") startConversation();
-});
