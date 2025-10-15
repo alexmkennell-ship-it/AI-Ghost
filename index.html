@@ -3,90 +3,33 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Bob the Talking Skeleton</title>
+  <title>Bob the Hayfield Skeleton</title>
+  <script type="module" src="https://unpkg.com/@google/model-viewer/dist/model-viewer.min.js"></script>
+  <script defer src="bob.js"></script>
   <style>
     body {
-      background-color: black;
+      margin: 0;
+      background: black;
       display: flex;
       justify-content: center;
       align-items: center;
       height: 100vh;
-      overflow: hidden;
     }
-    #bob {
-      height: 80vh;
-      image-rendering: crisp-edges;
-      animation: fadeIn 1s ease-in-out;
-    }
-    @keyframes fadeIn {
-      from { opacity: 0; }
-      to { opacity: 1; }
+    model-viewer {
+      width: 80vw;
+      height: 90vh;
     }
   </style>
 </head>
 <body>
-  <img id="bob" src="images/bobidle1.png" alt="Bob the Skeleton">
-
-  <script>
-    const bob = document.getElementById('bob');
-
-    const animations = {
-      idle: ['bobidle1.png', 'bobidle2.png', 'bobidlelookleft.png', 'bobidlelookright.png'],
-      talk: ['bobmouthclosed.png', 'bobmouthopenmid.png', 'bobmouthopen.png', 'bobmouthopenmid.png'],
-      wave: ['bobwavecenter.png', 'bobwaveleft.png', 'bobwaveright.png', 'bobwavecenter.png']
-    };
-
-    let state = 'idle';
-    let interval;
-
-    function play(animation, loop = false, callback) {
-      clearInterval(interval);
-      const frames = animations[animation];
-      let i = 0;
-      interval = setInterval(() => {
-        bob.src = `images/${frames[i]}`;
-        i++;
-        if (i >= frames.length) {
-          if (loop) i = 0;
-          else {
-            clearInterval(interval);
-            if (callback) callback();
-          }
-        }
-      }, 200);
-    }
-
-    function idleLoop() {
-      state = 'idle';
-      play('idle', true);
-    }
-
-    function talkLoop() {
-      state = 'talking';
-      play('talk', true);
-    }
-
-    function waveOnce() {
-      state = 'wave';
-      play('wave', false, idleLoop);
-    }
-
-    // Simulate a conversation for testing
-    function simulateConversation() {
-      if (state === 'idle') {
-        waveOnce();
-        setTimeout(() => {
-          talkLoop();
-          setTimeout(() => idleLoop(), 4000);
-        }, 1500);
-      }
-    }
-
-    // Start idle on load
-    idleLoop();
-
-    // Click anywhere to simulate a conversation
-    document.body.addEventListener('click', simulateConversation);
-  </script>
+  <model-viewer
+    id="bob"
+    src="models/bob_idle.glb"
+    autoplay
+    camera-controls
+    shadow-intensity="1"
+    disable-zoom
+    environment-image="neutral">
+  </model-viewer>
 </body>
 </html>
