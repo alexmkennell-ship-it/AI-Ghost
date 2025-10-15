@@ -1,90 +1,75 @@
-const bob = document.getElementById("bob");
-const promptBox = document.getElementById("prompt");
+const viewer = document.getElementById("bob");
 
-const baseURL = "https://pub-30bcc0b2a7044074a19efdef19f69857.r2.dev/";
+// your Cloudflare Worker endpoint
+const WORKER_URL = "https://ghostaiv1.alexmkennell.workers.dev/";
 
+// Animation library
 const animations = {
   idle: "Animation_Long_Breathe_and_Look_Around_withSkin.glb",
   wave: "Animation_Big_Wave_Hello_withSkin.glb",
   talk: "Animation_Talk_with_Hands_Open_withSkin.glb",
-  walk: "Animation_Walking_withSkin.glb",
-  shrug: "Animation_Shrug_withSkin.glb",
-  alert: "Animation_Alert_withSkin.glb"
 };
 
 let state = "idle";
-let isTalking = false;
 
-function setAnimation(name) {
-  if (state !== name) {
-    state = name;
-    bob.src = baseURL + animations[name];
+async function loadAnimation(type, loop = true) {
+  if (!animations[type]) return;
+  state = type;
+
+  viewer.src = `https://pub-30bcc0b2a7044074a19efdef19f69857.r2.dev/models/${animations[type]}`;
+  viewer.autoplay = true;
+
+  if (!loop) {
+    viewer.addEventListener("finished", () => {
+      if (state === "wave") startIdle();
+    }, { once: true });
   }
 }
 
-// --- Random idle motion ---
-function randomIdleBehavior() {
-  const idleChoices = ["idle", "shrug", "alert"];
-  setInterval(() => {
-    if (!isTalking && state === "idle") {
-      const next = idleChoices[Math.floor(Math.random() * idleChoices.length)];
-      setAnimation(next);
-    }
-  }, 15000);
+function startIdle() {
+  loadAnimation("idle", true);
 }
 
-// --- AI conversation logic ---
-async function talkToAI(question) {
-  try {
-    isTalking = true;
-    setAnimation("talk");
-    promptBox.textContent = "💬 Thinking...";
+async function startConversation() {
+  // wave first
+  await loadAnimation("wave", false);
 
-    const response = await fetch("https://ghostaiv1.alexmkennell.workers.dev/", {
+  setTimeout(async () => {
+    const prompt = prompt("Ask Bob something spooky:");
+    if (prompt) await talkToAI(prompt);
+  }, 3500);
+}
+
+async function talkToAI(userInput) {
+  try {
+    await loadAnimation("talk", true);
+
+    const response = await fetch(WORKER_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ prompt: question }),
+      body: JSON.stringify({ prompt: userInput }),
     });
 
     if (!response.ok) throw new Error(await response.text());
     const data = await response.json();
-    const reply = data.reply || "(bone-chilling silence...)";
+    const reply = data.reply || "(eerie silence...)";
 
-    promptBox.textContent = `🗣️ ${reply}`;
+    // Speak reply
+    const utterance = new SpeechSynthesisUtterance(reply);
+    utterance.rate = 0.9;
+    speechSynthesis.speak(utterance);
 
-    // Voice playback
-    const utter = new SpeechSynthesisUtterance(reply);
-    utter.rate = 0.9;
-    speechSynthesis.speak(utter);
-    utter.onend = () => {
-      isTalking = false;
-      setAnimation("idle");
-      promptBox.textContent = "💀 Tap anywhere to talk to Bob 💀";
-    };
+    utterance.onend = () => startIdle();
   } catch (err) {
     console.error("Error:", err);
-    isTalking = false;
-    setAnimation("idle");
-    promptBox.textContent = "💀 Tap anywhere to talk to Bob 💀";
+    startIdle();
   }
 }
 
-// --- Interaction ---
-document.body.addEventListener("click", async () => {
-  if (isTalking) return;
-  setAnimation("wave");
-  promptBox.textContent = "👋 Hey there!";
+// Start idle on load
+viewer.addEventListener("load", () => startIdle());
 
-  setTimeout(async () => {
-    const question = prompt("Ask Bob something spooky:");
-    if (question) await talkToAI(question);
-    else {
-      setAnimation("idle");
-      promptBox.textContent = "💀 Tap anywhere to talk to Bob 💀";
-    }
-  }, 2500);
+// Click anywhere to trigger
+document.body.addEventListener("click", () => {
+  if (state === "idle") startConversation();
 });
-
-// --- Start Idle ---
-setAnimation("idle");
-randomIdleBehavior();
