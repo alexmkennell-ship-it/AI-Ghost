@@ -1,9 +1,9 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Bob the Skeleton</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bob the Hayfield Skeleton</title>
   <script type="module" src="https://unpkg.com/@google/model-viewer/dist/model-viewer.min.js"></script>
   <script defer src="bob.js"></script>
   <style>
@@ -15,23 +15,40 @@
       align-items: center;
       height: 100vh;
       overflow: hidden;
+      cursor: pointer;
     }
     model-viewer {
       width: 80vw;
       height: 90vh;
       --poster-color: transparent;
     }
+    #prompt {
+      position: absolute;
+      bottom: 40px;
+      left: 50%;
+      transform: translateX(-50%);
+      color: #9efb9a;
+      font-family: monospace;
+      background: rgba(0,0,0,0.6);
+      padding: 10px 18px;
+      border-radius: 8px;
+      font-size: 1rem;
+      text-align: center;
+      user-select: none;
+    }
   </style>
 </head>
 <body>
   <model-viewer
     id="bob"
-    src="models/idle.glb"
+    src="https://pub-30bcc0b2a7044074a19efdef19f69857.r2.dev/Animation_Sleep_Normally_withSkin.glb"
     autoplay
     camera-controls
     disable-zoom
     shadow-intensity="1"
-    environment-image="neutral">
+    environment-image="neutral"
+    alt="Bob the Hayfield Skeleton">
   </model-viewer>
+  <div id="prompt">💀 Tap anywhere to talk to Bob 💀</div>
 </body>
 </html>
