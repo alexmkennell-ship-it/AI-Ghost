@@ -1,78 +1,75 @@
 const bob = document.getElementById("bob");
 
+const animations = {
+  idle: "models/idle.glb",
+  wave: "models/wave.glb",
+  talk: "models/talk.glb",
+  walk: "models/walk.glb",
+  alert: "models/alert.glb",
+  shrug: "models/shrug.glb",
+  arise: "models/arise.glb"
+};
+
 let state = "idle";
 let isTalking = false;
 
-// Preload models (optional, for smoother switching)
-const models = {
-  idle: "models/bob_idle.glb",
-  wave: "models/bob_wave.glb",
-  talk: "models/bob_talk.glb",
-  walk: "models/bob_walk.glb"
-};
-
-// Idle looping behavior
-function startIdle() {
-  state = "idle";
-  bob.src = models.idle;
-  randomIdleCycle();
+function setAnimation(name) {
+  state = name;
+  bob.src = animations[name];
 }
 
-// Random silly idles
-function randomIdleCycle() {
-  const idleOptions = [models.idle, models.walk, models.wave];
+// --- Random Idle Movements ---
+function randomIdleBehavior() {
+  const idleOptions = ["idle", "shrug", "alert"];
   setInterval(() => {
     if (!isTalking && state === "idle") {
       const next = idleOptions[Math.floor(Math.random() * idleOptions.length)];
-      bob.src = next;
+      setAnimation(next);
     }
-  }, 15000); // every 15s pick a random idle
+  }, 15000); // 15 seconds
 }
 
-// Conversation trigger
-document.body.addEventListener("click", async () => {
-  if (state === "idle") {
-    state = "wave";
-    bob.src = models.wave;
-
-    setTimeout(async () => {
-      const prompt = prompt("Ask Bob something spooky:");
-      if (prompt) await talkToAI(prompt);
-    }, 2000);
-  }
-});
-
-// Connect to AI worker and talk
-async function talkToAI(userInput) {
+// --- AI Talking Logic ---
+async function talkToAI(promptText) {
   try {
     isTalking = true;
-    bob.src = models.talk;
+    setAnimation("talk");
 
     const response = await fetch("https://ghostaiv1.alexmkennell.workers.dev/", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ prompt: userInput }),
+      body: JSON.stringify({ prompt: promptText }),
     });
 
     if (!response.ok) throw new Error(await response.text());
     const data = await response.json();
-    const reply = data.reply || "(eerie silence…)";
+    const reply = data.reply || "(bone-chilling silence...)";
 
-    // Speak the reply
-    const utterance = new SpeechSynthesisUtterance(reply);
-    utterance.rate = 0.9;
-    speechSynthesis.speak(utterance);
-
-    utterance.onend = () => {
+    const utter = new SpeechSynthesisUtterance(reply);
+    utter.rate = 0.9;
+    speechSynthesis.speak(utter);
+    utter.onend = () => {
       isTalking = false;
-      startIdle();
+      setAnimation("idle");
     };
   } catch (err) {
-    console.error("Error:", err);
+    console.error(err);
     isTalking = false;
-    startIdle();
+    setAnimation("idle");
   }
 }
 
-// Start everything
-startIdle();
+// --- When user clicks ---
+document.body.addEventListener("click", async () => {
+  if (state === "idle") {
+    setAnimation("wave");
+    setTimeout(async () => {
+      const question = prompt("Ask Bob something spooky:");
+      if (question) await talkToAI(question);
+    }, 2000);
+  }
+});
+
+// Start idle mode
+setAnimation("idle");
+randomIdleBehavior();
