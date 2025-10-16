@@ -57,6 +57,29 @@ async function talkToBob(userInput) {
     console.log("Talking to Bob:", userInput);
     isTalking = true;
     playAnimation("talk");
+
+    // --- Pause speech recognition while Bob talks ---
+if (recognition) recognition.stop();
+
+// --- Use Speech Synthesis ---
+const utterance = new SpeechSynthesisUtterance(reply);
+utterance.rate = 0.95;
+utterance.pitch = 0.9;
+
+// Optional: Add slight pauses and warmth
+utterance.volume = 1;
+
+// Stop listening during speech, then resume when done
+utterance.onstart = () => {
+  console.log("Bob speaking...");
+};
+utterance.onend = () => {
+  console.log("Bob done speaking, resuming mic...");
+  if (recognition) setTimeout(() => recognition.start(), 800);
+};
+
+speechSynthesis.speak(utterance);
+
 // --- Use Speech Synthesis with a custom voice ---
 const utterance = new SpeechSynthesisUtterance(reply);
 utterance.rate = 1.0;
