@@ -1,0 +1,6 @@
+name = "ghostaiv1"
+main = "worker-ghostaiv1/index.js"
+compatibility_date = "2024-10-16"
+
+[vars]
+# Add your bindings like OPENAI_API_KEY in Cloudflare dashboard or via `wrangler secret put`.
