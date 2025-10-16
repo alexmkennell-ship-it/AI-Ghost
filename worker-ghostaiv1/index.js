@@ -9,28 +9,52 @@ export default {
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS_HEADERS });
     if (request.method !== "POST") return new Response("POST only", { status: 405, headers: CORS_HEADERS });
 
-    const { prompt } = await request.json();
+    try {
+      if (!env?.OPENAI_API_KEY) {
+        return new Response("Missing OPENAI_API_KEY binding", { status: 500, headers: CORS_HEADERS });
+      }
 
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${env.OPENAI_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "gpt-4o-mini",
-        messages: [
-          { role: "system", content: "You are Bob, a funny animated skeleton ghost that chats with kids on a hayride." },
-          { role: "user", content: prompt },
-        ],
-      }),
-    });
+      const body = await request.json().catch(() => null);
+      const prompt = body?.prompt?.toString().trim();
 
-    const data = await response.json();
-    const reply = data.choices?.[0]?.message?.content?.trim() || "Boo?";
+      if (!prompt) {
+        return new Response("Prompt is required", { status: 400, headers: CORS_HEADERS });
+      }
 
-    return new Response(JSON.stringify({ reply }), {
-      headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
-    });
+      const response = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${env.OPENAI_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "gpt-4o-mini",
+          messages: [
+            { role: "system", content: "You are Bob, a funny animated skeleton ghost that chats with kids on a hayride." },
+            { role: "user", content: prompt },
+          ],
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        return new Response(errorText || "Upstream request failed", {
+          status: response.status,
+          headers: { ...CORS_HEADERS, "Content-Type": "text/plain" },
+        });
+      }
+
+      const data = await response.json();
+      const reply = data.choices?.[0]?.message?.content?.trim() || "Boo?";
+
+      return new Response(JSON.stringify({ reply }), {
+        headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+      });
+    } catch (err) {
+      return new Response(err.message || "Unexpected error", {
+        status: 500,
+        headers: CORS_HEADERS,
+      });
+    }
   },
 };
