@@ -17,3 +17,14 @@ Make sure the `OPENAI_API_KEY` secret is configured before deploying:
 ```sh
 npx wrangler secret put OPENAI_API_KEY
 ```
+
+## Continuous deployment via GitHub Actions
+
+This repository includes a `Deploy ghostaiv1 worker` workflow that can publish updates without using the command line. To enable it:
+
+1. In GitHub, go to **Settings → Secrets and variables → Actions → New repository secret**.
+2. Create `CLOUDFLARE_API_TOKEN` with a token that has **Account → Workers Scripts:Edit** and **Account → Workers KV Storage:Edit** (if used) permissions for your Cloudflare account.
+3. Create `CLOUDFLARE_ACCOUNT_ID` with your Cloudflare account ID.
+4. Commit and push your changes to the `main` branch (or trigger the workflow manually via **Actions → Deploy ghostaiv1 worker → Run workflow**).
+
+The workflow automatically installs Wrangler and deploys using the shared `wrangler.toml`, so you can roll out updates directly from GitHub.
