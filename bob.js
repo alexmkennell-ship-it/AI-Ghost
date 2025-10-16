@@ -1,162 +1,137 @@
-// -------------------------------
-// Bob the Bone Cowboy - Frontend
-// -------------------------------
-const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
-recognition.lang = "en-US";
-recognition.continuous = false;
-recognition.interimResults = false;
+// -------------------------
+// Bob the Skeleton JS (voice edition)
+// -------------------------
 
-// Start listening automatically
-recognition.start();
+const model = document.getElementById("bob");
+if (!model) console.warn("⚠️ No <model-viewer id='bob'> found in DOM.");
 
-recognition.onresult = async (event) => {
-  const userInput = event.results[0][0].transcript;
-  console.log("You said:", userInput);
-  await talkToBob(userInput);
-};
+let recognition;
+let listening = false;
 
-recognition.onend = () => {
-  // Restart listening automatically after each response
-  setTimeout(() => recognition.start(), 1000);
-};
+// -------------------------
+// Speech Recognition Setup
+// -------------------------
+if ("webkitSpeechRecognition" in window || "SpeechRecognition" in window) {
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  recognition = new SpeechRecognition();
+  recognition.lang = "en-US";
+  recognition.continuous = false;
+  recognition.interimResults = false;
 
-recognition.onerror = (event) => {
-  console.error("Speech recognition error:", event.error);
-};
+  recognition.onstart = () => {
+    listening = true;
+    console.log("🎙 Bob is listening...");
+    playAnimation("idle");
+  };
 
-// URL of your Cloudflare Worker
-const workerURL = "https://ghostaiv1.alexmkennell.workers.dev/";
+  recognition.onresult = async (event) => {
+    const userSpeech = event.results[0][0].transcript;
+    console.log("👂 You said:", userSpeech);
+    await talkToBob(userSpeech);
+  };
 
-// Select elements
-const bobModel = document.querySelector("#bobModel");
-const talkButton = document.querySelector("#talkButton");
-
-// Animation clips
-const animations = {
-  idle: "Animation_Long_Breathe_and_Look_Around_withSkin.glb",
-  wave: "Animation_Agree_Gesture_withSkin.glb",
-  talk: "Animation_Talk_withSkin.glb" // optional if you have it
-};
-
-// State control
-let isTalking = false;
-
-// --- Helper: play a model animation ---
-function playAnimation(name) {
-  if (!bobModel) {
-    console.error("Bob model not found in DOM.");
-    return;
-  }
-  bobModel.src = `https://pub-30bcc0b2a7044074a19efdef19f69857.r2.dev/models/${animations[name]}`;
-  console.log(`Bob animation: ${name}`);
+  recognition.onerror = (e) => console.error("Speech recognition error:", e);
+  recognition.onend = () => {
+    listening = false;
+    console.log("Recognition ended. Restarting in 2s...");
+    setTimeout(() => {
+      if (!listening) recognition.start();
+    }, 2000);
+  };
+} else {
+  console.warn("Speech recognition not supported in this browser.");
 }
 
-// --- AI Conversation Logic ---
-async function talkToBob(userInput) {
+// -------------------------
+// Animation Helper
+// -------------------------
+function playAnimation(type) {
+  if (!model) return console.warn("Bob model not found in DOM.");
+  console.log("Bob animation:", type);
+
+  switch (type) {
+    case "wave":
+      model.setAttribute("animation-name", "Animation_Wave_withSkin");
+      break;
+    case "talk":
+      model.setAttribute("animation-name", "Animation_Talk_withSkin");
+      break;
+    default:
+      model.setAttribute("animation-name", "Animation_Long_Breathe_and_Look_Around_withSkin");
+  }
+}
+
+// -------------------------
+// Talk to Bob via Worker (AI + Voice)
+// -------------------------
+async function talkToBob(promptText) {
   try {
-    console.log("Talking to Bob:", userInput);
-    isTalking = true;
+    console.log("Talking to Bob:", promptText);
     playAnimation("talk");
 
-    // --- Pause speech recognition while Bob talks ---
-if (recognition) recognition.stop();
+    // --- Stop listening while Bob speaks ---
+    if (recognition && listening) recognition.stop();
 
-// --- Use Speech Synthesis ---
-const utterance = new SpeechSynthesisUtterance(reply);
-utterance.rate = 0.95;
-utterance.pitch = 0.9;
-
-// Optional: Add slight pauses and warmth
-utterance.volume = 1;
-
-// Stop listening during speech, then resume when done
-utterance.onstart = () => {
-  console.log("Bob speaking...");
-};
-utterance.onend = () => {
-  console.log("Bob done speaking, resuming mic...");
-  if (recognition) setTimeout(() => recognition.start(), 800);
-};
-
-speechSynthesis.speak(utterance);
-
-// --- Use Speech Synthesis with a custom voice ---
-const utterance = new SpeechSynthesisUtterance(reply);
-utterance.rate = 1.0;
-utterance.pitch = 1.0;
-
-// Pick a voice dynamically (list them once)
-const voices = speechSynthesis.getVoices();
-const cowboyVoice = voices.find(v => 
-  v.name.toLowerCase().includes("daniel") || 
-  v.name.toLowerCase().includes("ralph") || 
-  v.name.toLowerCase().includes("male")
-);
-if (cowboyVoice) utterance.voice = cowboyVoice;
-
-speechSynthesis.speak(utterance);
-
-    const response = await fetch(workerURL, {
+    // --- Ask AI for response ---
+    const aiRes = await fetch("https://ghostaiv1.alexmkennell.workers.dev/", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ prompt: userInput })
+      body: JSON.stringify({ prompt: promptText }),
     });
 
-    if (!response.ok) {
-      const text = await response.text();
-      throw new Error(`Worker error ${response.status}: ${text}`);
-    }
+    if (!aiRes.ok) throw new Error(await aiRes.text());
+    const { reply } = await aiRes.json();
+    console.log("💬 Bob says:", reply);
 
-    const data = await response.json();
-    const reply = data.reply || "Well, partner, I reckon I'm speechless.";
+    // --- Request TTS from Worker ---
+    const ttsRes = await fetch("https://ghostaiv1.alexmkennell.workers.dev/speak", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: reply }),
+    });
 
-    console.log("Bob says:", reply);
+    if (!ttsRes.ok) throw new Error("TTS fetch failed.");
 
-    const utterance = new SpeechSynthesisUtterance(reply);
-    utterance.rate = 0.9;
-    speechSynthesis.speak(utterance);
+    // --- Play AI voice ---
+    const audioBlob = await ttsRes.blob();
+    const audioURL = URL.createObjectURL(audioBlob);
+    const audio = new Audio(audioURL);
 
-    utterance.onend = () => {
-      isTalking = false;
+    audio.onplay = () => console.log("🔊 Bob speaking...");
+    audio.onended = () => {
+      console.log("✅ Bob finished speaking.");
       playAnimation("idle");
+      setTimeout(() => recognition.start(), 1000);
     };
+
+    audio.play();
   } catch (err) {
     console.error("Error talking to Bob:", err);
-    isTalking = false;
     playAnimation("idle");
+    if (recognition) recognition.start();
   }
 }
 
-// --- Event: Talk button or body click ---
-function initConversationTrigger() {
-  if (talkButton) {
-    talkButton.addEventListener("click", async () => {
-      if (isTalking) return;
-      const question = window.prompt("Ask Bob something:");
-      if (question) await talkToBob(question);
-    });
-  } else {
-    console.warn("No talkButton found — Bob will listen for body clicks instead.");
-    document.body.addEventListener("click", async () => {
-      if (isTalking) return;
-      const question = window.prompt("Ask Bob something:");
-      if (question) await talkToBob(question);
-    });
-  }
-}
-
-// --- Random idle behavior ---
+// -------------------------
+// Random Idle Behavior
+// -------------------------
 function randomIdleBehavior() {
-  if (isTalking) return;
-  const r = Math.random();
-  if (r < 0.25) playAnimation("wave");
+  const random = Math.random();
+  if (random < 0.2) playAnimation("wave");
   else playAnimation("idle");
 }
 
-// --- On load ---
+// -------------------------
+// Initialize
+// -------------------------
 window.addEventListener("DOMContentLoaded", () => {
   console.log("Bob’s ready for duty!");
   playAnimation("idle");
-  initConversationTrigger();
-  setInterval(randomIdleBehavior, 15000); // every 15s
+
+  if (recognition) {
+    console.log("Auto voice recognition active.");
+    recognition.start();
+  }
+
+  setInterval(randomIdleBehavior, 15000); // every 15 seconds
 });
