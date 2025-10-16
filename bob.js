@@ -57,6 +57,21 @@ async function talkToBob(userInput) {
     console.log("Talking to Bob:", userInput);
     isTalking = true;
     playAnimation("talk");
+// --- Use Speech Synthesis with a custom voice ---
+const utterance = new SpeechSynthesisUtterance(reply);
+utterance.rate = 1.0;
+utterance.pitch = 1.0;
+
+// Pick a voice dynamically (list them once)
+const voices = speechSynthesis.getVoices();
+const cowboyVoice = voices.find(v => 
+  v.name.toLowerCase().includes("daniel") || 
+  v.name.toLowerCase().includes("ralph") || 
+  v.name.toLowerCase().includes("male")
+);
+if (cowboyVoice) utterance.voice = cowboyVoice;
+
+speechSynthesis.speak(utterance);
 
     const response = await fetch(workerURL, {
       method: "POST",
