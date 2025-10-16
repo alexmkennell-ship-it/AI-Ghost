@@ -1,7 +1,0 @@
-name = "ghostaiv1"
-main = "index.js"
-compatibility_date = "2025-10-16"
-
-[[r2_buckets]]
-binding = "bob-animations"
-bucket_name = "bob-animations"
