@@ -1,6 +1,6 @@
 {
   "name": "bob-ai",
-  "main": "index.js",
+  "main": "bob.js",
   "compatibility_date": "2025-10-15",
   "assets": {
     "directory": "./"
