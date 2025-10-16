@@ -1,6 +1,28 @@
 // -------------------------------
 // Bob the Bone Cowboy - Frontend
 // -------------------------------
+const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
+recognition.lang = "en-US";
+recognition.continuous = false;
+recognition.interimResults = false;
+
+// Start listening automatically
+recognition.start();
+
+recognition.onresult = async (event) => {
+  const userInput = event.results[0][0].transcript;
+  console.log("You said:", userInput);
+  await talkToBob(userInput);
+};
+
+recognition.onend = () => {
+  // Restart listening automatically after each response
+  setTimeout(() => recognition.start(), 1000);
+};
+
+recognition.onerror = (event) => {
+  console.error("Speech recognition error:", event.error);
+};
 
 // URL of your Cloudflare Worker
 const workerURL = "https://ghostaiv1.alexmkennell.workers.dev/";
