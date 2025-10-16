@@ -1,6 +1,6 @@
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS",
+  "Access-Control-Allow-Methods": "GET,HEAD,OPTIONS",
   "Access-Control-Allow-Headers": "*",
 };
 
@@ -9,20 +9,19 @@ export default {
     const url = new URL(request.url);
     const pathname = url.pathname;
 
+    // Handle CORS preflight
     if (request.method === "OPTIONS") {
       return new Response(null, { status: 204, headers: CORS_HEADERS });
     }
 
+    // Serve .glb models from R2
     if (pathname.startsWith("/models/")) {
       const key = pathname.replace("/models/", "");
-      const object = await env["bob-animations"].get(key);
-      if (!object) {
-        return new Response(`Model not found: ${key}`, {
-          status: 404,
-          headers: CORS_HEADERS,
-        });
+      const file = await env["bob-animations"].get(key);
+      if (!file) {
+        return new Response(`Model not found: ${key}`, { status: 404, headers: CORS_HEADERS });
       }
-      return new Response(object.body, {
+      return new Response(file.body, {
         headers: {
           ...CORS_HEADERS,
           "Content-Type": "model/gltf-binary",
@@ -31,8 +30,8 @@ export default {
       });
     }
 
-    return new Response("Usage: /models/<filename.glb>", {
-      status: 400,
+    return new Response("Use /models/<filename>.glb to fetch assets.", {
+      status: 200,
       headers: CORS_HEADERS,
     });
   },
