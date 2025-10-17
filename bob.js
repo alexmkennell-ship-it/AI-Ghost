@@ -193,11 +193,27 @@ async function enterSleep() {
   await setAnim(ANIM.SLEEP);
 }
 
+// Start listening immediately after the user clicks
+function startListening() {
+  if (hasStarted) return;
+  hasStarted = true;
 
-// Boot sequence (overlay version)
+  console.log("🎧 Bob is ready to listen!");
+  state = "idle";
+  bumpActivity();
+  setStatus("👂 Listening...");
+  setAnim(ANIM.IDLE_MAIN);
+  scheduleIdleSwap();
+  startVoiceRecognition();
+}
+
+// Boot sequence
 window.addEventListener("DOMContentLoaded", () => {
   if (!bob) return;
 
+  const activate = async () => {
+    if (hasStarted) return;
+    console.log("🖱️ Activation click detected");
   const overlay = document.getElementById("wakeOverlay");
   const handleWakeClick = async () => {
     console.log("🖱️ Wake click detected");
@@ -208,6 +224,12 @@ window.addEventListener("DOMContentLoaded", () => {
     startListening();
   };
 
+  document.addEventListener("click", activate, { once: true });
+
+  setStatus("👆 Click anywhere to start.");
+
+  bob.addEventListener("load", () => {
+    console.log("✅ Bob ready!");
   if (overlay) {
     overlay.addEventListener("click", handleWakeClick, { once: true });
   }
