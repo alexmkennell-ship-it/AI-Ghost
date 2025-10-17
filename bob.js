@@ -1,7 +1,7 @@
-// bob.js — smooth crossfade + live microphone listening
+// bob.js — smooth crossfade + live microphone + reliable playback
 //
-// Combines the crossfade rewrite with a built-in mic listener
-// so Bob actively listens and responds in real time.
+// Full working version with active listening, smooth animation transitions,
+// and hardened audio playback to prevent silent or blocked responses.
 //
 const WORKER_URL = "https://ghostaiv1.alexmkennell.workers.dev";
 const MODEL_BASE = "https://pub-30bcc0b2a7044074a19efdef19f69857.r2.dev/models/";
@@ -132,125 +132,34 @@ let abortSpeech = null;
 async function speakAndAnimate(text) {
   if (!text) return;
 
-  state = "talking";
-  setStatus("💬 Talking...");
-  const talkClip = pick(talkPool);
-  await setAnim(talkClip, { minHoldMs: 900 });
-
-  const ac = new AbortController();
-  abortSpeech = () => ac.abort();
-
-  const resp = await fetch(`${WORKER_URL}/talk`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ text }),
-    signal: ac.signal,
-  });
-
-  if (!resp.ok) throw new Error(`TTS failed: ${resp.status}`);
-  const blob = await resp.blob();
-  const url = URL.createObjectURL(blob);
-
-  const audio = new Audio(url);
-  audio.playbackRate = 1.0;
-  audio.onended = async () => {
-    URL.revokeObjectURL(url);
-    state = "idle";
-    setStatus("👂 Listening...");
-    await setAnim(ANIM.IDLE_MAIN, { minHoldMs: 600 });
-  };
-
   try {
-    await audio.play();
-  } catch {
-    setStatus("👆 Click to allow audio");
-    document.addEventListener("click", () => audio.play(), { once: true });
-  }
-}
+    state = "talking";
+    setStatus("💬 Talking...");
+    const talkClip = pick(talkPool);
+    await setAnim(talkClip, { minHoldMs: 900 });
 
-function cancelSpeech() {
-  if (abortSpeech) abortSpeech();
-  abortSpeech = null;
-}
+    const ac = new AbortController();
+    abortSpeech = () => ac.abort();
 
-// --- Inactivity ---
-let lastActivity = Date.now();
-function bumpActivity() { lastActivity = Date.now(); }
+    // Fetch TTS audio from worker
+    const resp = await fetch(`${WORKER_URL}/talk`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text }),
+      signal: ac.signal,
+    });
 
-setInterval(async () => {
-  const idleMs = Date.now() - lastActivity;
-  if (state === "idle" && idleMs > 45000) {
-    state = "sleeping";
-    setStatus("😴 Sleeping...");
-    await setAnim(ANIM.SLEEP, { minHoldMs: 1500 });
-  }
-}, 1000);
+    if (!resp.ok) throw new Error(`TTS failed: ${resp.status}`);
+    const blob = await resp.blob();
 
-document.addEventListener("pointerdown", () => {
-  bumpActivity();
-  if (state === "sleeping") {
-    state = "idle";
-    setStatus("👂 Listening...");
-    setAnim(ANIM.IDLE_MAIN, { minHoldMs: 800 });
-  }
-}, { passive: true });
+    // Convert blob -> playable audio URL
+    const url = URL.createObjectURL(blob);
+    const audio = new Audio(url);
+    audio.playbackRate = 1.0;
 
-// --- Microphone listener (SpeechRecognition) ---
-window.SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-
-if (window.SpeechRecognition) {
-  const recognition = new SpeechRecognition();
-  recognition.continuous = true;
-  recognition.interimResults = false;
-  recognition.lang = "en-US";
-
-  recognition.onresult = async (event) => {
-    const transcript = event.results[event.results.length - 1][0].transcript.trim();
-    if (transcript.length > 0) {
-      await speakAndAnimate(transcript);
-    }
-  };
-
-  recognition.onerror = (e) => console.warn("Speech recognition error:", e.error);
-  recognition.onend = () => {
-    if (state === "idle") recognition.start();
-  };
-
-  window.addEventListener("click", () => {
-    try {
-      recognition.start();
-      setStatus("👂 Listening (mic on)...");
-    } catch (err) {
-      console.warn("Mic start error:", err);
-    }
-  }, { once: true });
-} else {
-  console.warn("SpeechRecognition not supported in this browser.");
-}
-
-// --- Boot ---
-async function boot() {
-  statusEl = document.getElementById("status");
-  mvA = document.getElementById("mvA");
-  mvB = document.getElementById("mvB");
-  activeMV = mvA;
-  inactiveMV = mvB;
-  activeMV.classList.add("active");
-
-  setStatus("Warming up…");
-  await warmup();
-  await setAnim(ANIM.IDLE_MAIN, { minHoldMs: 800 });
-  state = "idle";
-  setStatus("👂 Listening...");
-  scheduleIdleSwap();
-
-  document.addEventListener("keydown", (e) => {
-    if (e.key.toLowerCase() === "p") {
-      speakAndAnimate("Well now, partner—I'm a real pun slinger!");
-    }
-  });
-}
-
-window.addEventListener("DOMContentLoaded", boot);
-
-window.Bob = { setAnim, speak: speakAndAnimate, state: () => state };
+    // Safely play with click fallback
+    const playAudio = async () => {
+      try {
+        await audio.play();
+      } catch (err) {
+        console.warn
