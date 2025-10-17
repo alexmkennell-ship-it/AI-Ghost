@@ -3,74 +3,155 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Bob the Mischievous Skeleton</title>
+  <title>Bob the Talking Skeleton</title>
 
-  <!-- Google Model Viewer -->
+  <!-- Model Viewer -->
   <script type="module" src="https://unpkg.com/@google/model-viewer/dist/model-viewer.min.js"></script>
 
   <style>
     html, body {
       margin: 0;
-      padding: 0;
-      background: black;
+      background: #0d0d0d;
       overflow: hidden;
-      height: 100%;
-    }
-    model-viewer {
-      width: 100vw;
       height: 100vh;
-      background: radial-gradient(#0a0a0a, #000);
-    }
-    .prompt {
-      position: fixed;
-      bottom: 20px;
-      left: 50%;
-      transform: translateX(-50%);
-      background: rgba(20,20,20,0.8);
-      color: #00ff9d;
-      padding: 10px 20px;
-      border-radius: 10px;
-      font-family: monospace;
       display: flex;
-      gap: 10px;
+      justify-content: center;
       align-items: center;
+      flex-direction: column;
+      color: #0f0;
+      font-family: monospace;
     }
-    input {
-      background: transparent;
-      border: 1px solid #00ff9d;
-      color: #00ff9d;
-      padding: 5px 10px;
-      border-radius: 5px;
-      outline: none;
-      width: 220px;
+
+    #bob {
+      width: 500px;
+      height: 600px;
     }
-    button {
-      background: #00ff9d;
-      color: black;
-      border: none;
-      border-radius: 5px;
-      padding: 5px 10px;
-      cursor: pointer;
+
+    #status {
+      margin-top: 10px;
+      font-size: 1rem;
+      opacity: 0.8;
     }
   </style>
 </head>
 <body>
-<model-viewer
-  id="bobModel"
-  src="https://pub-30bcc0b2a7044074a19efdef19f69857.r2.dev/models/Animation_Long_Breathe_and_Look_Around_withSkin.glb"
-  alt="Bob the Skeleton"
-  autoplay
-  camera-controls
-  exposure="1"
-  shadow-intensity="1"
-  animation-name="Animation_Long_Breathe_and_Look_Around_withSkin"
-></model-viewer>
+  <model-viewer
+    id="bob"
+    src="https://pub-30bcc0b2a7044074a19efdef19f69857.r2.dev/models/Animation_Long_Breathe_and_Look_Around_withSkin.glb"
+    alt="Bob the Skeleton"
+    autoplay
+    camera-controls
+    exposure="1"
+    shadow-intensity="1"
+    animation-name="Animation_Long_Breathe_and_Look_Around_withSkin"
+  ></model-viewer>
 
-  <div class="prompt">
-    <input type="text" id="userInput" placeholder="Say something to Bob..." />
-    <button id="sendBtn">Talk</button>
-  </div>
+  <div id="status">💀 Bob’s booting up...</div>
 
-  <script src="bob.js"></script>
+  <script>
+    const bob = document.getElementById("bob");
+    const status = document.getElementById("status");
+    const workerURL = "https://ghostaiv1.alexmkennell.workers.dev/";
+
+    // --- Wait for Bob to load ---
+    bob.addEventListener("load", () => {
+      console.log("✅ Bob is ready!");
+      status.textContent = "🎙 Say something to Bob...";
+      startVoiceRecognition();
+    });
+
+    // --- Play Animation Helper ---
+    function playAnimation(name) {
+      if (!bob) return;
+      try {
+        bob.animationName = name;
+        console.log("Bob animation:", name);
+      } catch (e) {
+        console.warn("Animation play error:", e);
+      }
+    }
+
+    // --- Speech Recognition Setup ---
+    function startVoiceRecognition() {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SpeechRecognition) {
+        status.textContent = "❌ Speech recognition not supported.";
+        return;
+      }
+
+      const recognition = new SpeechRecognition();
+      recognition.lang = "en-US";
+      recognition.continuous = true;
+      recognition.interimResults = false;
+
+      recognition.onstart = () => {
+        console.log("🎙 Bob is listening...");
+        status.textContent = "👂 Listening...";
+        playAnimation("Animation_Long_Breathe_and_Look_Around_withSkin");
+      };
+
+      recognition.onresult = (event) => {
+        const transcript = event.results[event.resultIndex][0].transcript.trim();
+        console.log("👂 You said:", transcript);
+        status.textContent = `🧠 "${transcript}"`;
+        recognition.stop();
+        talkToBob(transcript);
+      };
+
+      recognition.onerror = (e) => {
+        console.warn("Speech recognition error:", e);
+        status.textContent = "⚠️ Mic error or no speech detected.";
+      };
+
+      recognition.onend = () => {
+        console.log("🔁 Restarting listener...");
+        setTimeout(() => recognition.start(), 1500);
+      };
+
+      recognition.start();
+    }
+
+    // --- Talk to Worker and Speak Response ---
+    async function talkToBob(userInput) {
+      try {
+        playAnimation("Animation_Long_Breathe_and_Look_Around_withSkin");
+        console.log("Talking to Bob:", userInput);
+
+        const response = await fetch(workerURL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ prompt: userInput })
+        });
+
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+        const data = await response.json();
+        const reply = data.reply || "(spooky silence...)";
+
+        console.log("💬 Bob:", reply);
+        status.textContent = `💀 ${reply}`;
+
+        // --- Voice Output ---
+        const speech = new SpeechSynthesisUtterance(reply);
+        speech.voice = speechSynthesis.getVoices().find(v =>
+          v.name.includes("Microsoft David") || v.name.includes("Google US English")
+        ) || speechSynthesis.getVoices()[0];
+        speech.rate = 0.9;
+        speech.pitch = 0.8;
+        speech.volume = 1.0;
+
+        playAnimation("Animation_Long_Breathe_and_Look_Around_withSkin");
+        speechSynthesis.speak(speech);
+
+        speech.onend = () => {
+          playAnimation("Animation_Long_Breathe_and_Look_Around_withSkin");
+          setTimeout(() => status.textContent = "🎙 Say something else...", 500);
+        };
+      } catch (err) {
+        console.error("Error talking to Bob:", err);
+        status.textContent = "💀 Bob got spooked (connection issue).";
+      }
+    }
+  </script>
 </body>
 </html>
