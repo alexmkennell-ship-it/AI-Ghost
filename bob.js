@@ -181,23 +181,29 @@ async function wakeSequence(greet = true) {
   startVoiceRecognition();
 }
 
-// Boot sequence
+// Boot sequence (overlay version)
 window.addEventListener("DOMContentLoaded", () => {
   if (!bob) return;
+
   bob.addEventListener("load", async () => {
     console.log("✅ Bob ready!");
     setStatus("👆 Click to wake Bob up.");
-    document.body.addEventListener(
-      "click",
-      async () => {
-        try {
-          await new Audio().play().catch(() => {});
-        } catch {}
-        await wakeSequence(true);
-      },
-      { once: true }
-    );
+
+    const overlay = document.getElementById("wakeOverlay");
+    if (overlay) {
+      overlay.addEventListener(
+        "click",
+        async () => {
+          console.log("🖱️ Wake click detected");
+          overlay.remove(); // remove overlay so model-viewer works again
+          try { await new Audio().play().catch(() => {}); } catch {}
+          await wakeSequence(true);
+        },
+        { once: true }
+      );
+    }
   });
+
   document.addEventListener("click", bumpActivity, { passive: true });
   document.addEventListener("keydown", bumpActivity, { passive: true });
 });
