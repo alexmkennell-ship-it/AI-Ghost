@@ -193,12 +193,15 @@ async function enterSleep() {
   await setAnim(ANIM.SLEEP);
 }
 
-// Start listening immediately after the user clicks
-function startListening() {
-  if (hasStarted) return;
-  hasStarted = true;
-
-  console.log("🎧 Bob is ready to listen!");
+// Wake up sequence (fixed)
+async function wakeSequence(greet = true) {
+  console.log("🌅 Bob waking up...");
+  state = "waking";
+  setStatus("🌅 Bob’s wakin’ up...");
+  await setAnim(ANIM.WAKE, 2500);
+  await setAnim(ANIM.STAND, 1500);
+  if (greet) await setAnim(ANIM.WAVE, 1200);
+  await setAnim(ANIM.IDLE_MAIN); // setAnim already waits for the model to load
   state = "idle";
   bumpActivity();
   setStatus("👂 Listening...");
