@@ -108,7 +108,7 @@ function scheduleIdleSwap() {
   }, 12000 + Math.random() * 5000);
 }
 
-// --- Talking / TTS playback ---
+// --- Voice & talking ---
 let abortSpeech = null;
 async function speakAndAnimate(text) {
   if (!text) return;
@@ -122,6 +122,7 @@ async function speakAndAnimate(text) {
     const ac = new AbortController();
     abortSpeech = () => ac.abort();
 
+    // Force fetch as binary audio data
     const resp = await fetch(`${WORKER_URL}/talk`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -129,22 +130,29 @@ async function speakAndAnimate(text) {
       signal: ac.signal,
     });
 
-    if (!resp.ok) throw new Error(`TTS failed: ${resp.status}`);
-    const blob = await resp.blob();
+    // ✅ Force browser to treat as audio regardless of reported content-type
+    const arrayBuffer = await resp.arrayBuffer();
+    const blob = new Blob([arrayBuffer], { type: "audio/mpeg" });
 
+    // ✅ Convert blob to playable URL
     const url = URL.createObjectURL(blob);
     const audio = new Audio(url);
     audio.playbackRate = 1.0;
 
     const playAudio = async () => {
-      try { await audio.play(); }
-      catch (err) {
+      try {
+        await audio.play();
+      } catch (err) {
         console.warn("Autoplay blocked:", err);
         setStatus("👆 Click to hear Bob...");
-        document.addEventListener("click", () => {
-          audio.play().catch(console.error);
-          setStatus("💬 Playing response...");
-        }, { once: true });
+        document.addEventListener(
+          "click",
+          () => {
+            audio.play().catch(console.error);
+            setStatus("💬 Playing response...");
+          },
+          { once: true }
+        );
       }
     };
 
