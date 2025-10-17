@@ -1,5 +1,5 @@
-// bob.js — final version
-// Smooth crossfade + mic listening + correct /tts endpoint
+// bob.js — final polished build
+// Smooth crossfade + mic listening + correct /tts endpoint + robust playback
 
 const WORKER_URL = "https://ghostaiv1.alexmkennell.workers.dev";
 const MODEL_BASE = "https://pub-30bcc0b2a7044074a19efdef19f69857.r2.dev/models/";
@@ -124,7 +124,6 @@ async function speakAndAnimate(text) {
       signal: ac.signal,
     });
 
-    // Handle response as binary
     const arrayBuffer = await resp.arrayBuffer();
     if (arrayBuffer.byteLength < 1000) {
       console.warn("⚠️ Worker returned short or invalid audio response.");
@@ -137,23 +136,43 @@ async function speakAndAnimate(text) {
     const audio = new Audio(url);
     audio.playbackRate = 1.0;
 
+    // --- Robust playback handling ---
     const playAudio = async () => {
       try {
-        await audio.play();
+        const playPromise = audio.play();
+        if (playPromise !== undefined) {
+          await playPromise;
+          return;
+        }
       } catch (err) {
-        console.warn("Autoplay blocked:", err);
-        setStatus("👆 Click to hear Bob...");
-        document.addEventListener(
-          "click",
-          () => {
-            audio.play().catch(console.error);
-            setStatus("💬 Playing response...");
-          },
-          { once: true }
-        );
+        console.warn("First play blocked:", err);
       }
-    };
 
+      // 🔁 Fallback #1: quick silent user gesture hack
+      try {
+        const dummy = new Audio();
+        dummy.muted = true;
+        await dummy.play().catch(() => {});
+        await new Promise((r) => setTimeout(r, 100));
+        await audio.play();
+        console.log("✅ Recovered from autoplay block");
+        return;
+      } catch (err) {
+        console.warn("Silent gesture fallback failed:", err);
+      }
+
+      // 🔁 Fallback #2: explicit user click
+      setStatus("👆 Click to hear Bob...");
+      document.addEventListener(
+        "click",
+        () => {
+          audio.play().then(() => {
+            setStatus("💬 Playing response...");
+          }).catch(console.error);
+        },
+        { once: true }
+      );
+    };
     await playAudio();
 
     audio.onended = async () => {
@@ -255,16 +274,6 @@ async function boot() {
       }
     });
 
-    try {
-      if (window.SpeechRecognition && typeof recognition !== "undefined") {
-        recognition.start();
-        setStatus("👂 Listening (mic on)...");
-        console.log("🎙️ Mic started automatically after boot.");
-      }
-    } catch (err) {
-      console.warn("Mic auto-start failed:", err);
-    }
-
     console.log("🎉 Bob ready!");
   } catch (err) {
     console.error("Boot error:", err);
@@ -277,8 +286,4 @@ window.addEventListener("DOMContentLoaded", () => {
   boot();
 });
 
-window.Bob = {
-  setAnim,
-  speak: speakAndAnimate,
-  state: () => state,
-};
+window.Bob = { setAnim, speak: speakAndAnimate, state: () => state };
