@@ -78,9 +78,27 @@ function waitForModelLoad(timeout = 5000) {
 // Change animation safely
 async function setAnim(name, holdMs = 0) {
   if (!bob) return;
-  bob.src = `${MODEL_BASE}${name}.glb`;
-  console.log("🎞️ Animation:", name);
-  await waitForModelLoad();
+
+  const nextSrc = `${MODEL_BASE}${name}.glb`;
+  const currentSrc = bob.getAttribute("src");
+  const needsSrcSwap = currentSrc !== nextSrc;
+
+  if (needsSrcSwap) {
+    bob.setAttribute("src", nextSrc);
+    console.log("🎞️ Animation:", name);
+    await waitForModelLoad();
+  } else {
+    console.log("🎞️ Animation (restart):", name);
+  }
+
+  // Ensure the clip starts from the beginning and is actively playing.
+  try {
+    bob.currentTime = 0;
+    bob.play();
+  } catch (err) {
+    console.warn("⚠️ Unable to force animation playback.", err);
+  }
+
   if (holdMs > 0) await sleep(holdMs);
 }
 
