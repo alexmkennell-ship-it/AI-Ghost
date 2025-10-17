@@ -172,8 +172,7 @@ async function wakeSequence(greet = true) {
   await setAnim(ANIM.WAKE, 2500);
   await setAnim(ANIM.STAND, 1500);
   if (greet) await setAnim(ANIM.WAVE, 1200);
-  await setAnim(ANIM.IDLE_MAIN);
-  await waitForModelLoad(); // ✅ ensures model is loaded before mic starts
+  await setAnim(ANIM.IDLE_MAIN); // setAnim already waits for the model to load
   state = "idle";
   setStatus("🎙 Say somethin’, partner…");
   bumpActivity();
