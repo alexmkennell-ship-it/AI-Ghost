@@ -1,4 +1,4 @@
-// bob.js — Frontend for Bob the Bone Cowboy
+// bob.js — verified Alloy TTS version
 
 const bob = document.getElementById("bob");
 const status = document.getElementById("status");
@@ -15,9 +15,10 @@ async function playAnimation(name, duration = 2500) {
   bob.animationName = "Animation_Long_Breathe_and_Look_Around_withSkin";
 }
 
-// 🎙️ Voice Recognition
+// 🎙️ Voice Recognition Setup
 function startVoiceRecognition() {
-  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const SpeechRecognition =
+    window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SpeechRecognition) {
     status.textContent = "❌ Speech recognition not supported in this browser.";
     return;
@@ -33,7 +34,8 @@ function startVoiceRecognition() {
   };
 
   recognition.onresult = async (event) => {
-    const transcript = event.results[event.results.length - 1][0].transcript.trim();
+    const transcript =
+      event.results[event.results.length - 1][0].transcript.trim();
     if (!transcript) return;
     status.textContent = `💬 “${transcript}”`;
     recognition.stop();
@@ -48,48 +50,64 @@ function startVoiceRecognition() {
   recognition.start();
 }
 
-// 💬 AI + TTS logic
+// 💬 Talk to Bob
 async function talkToBob(userInput) {
   try {
+    console.log("🎙️ User said:", userInput);
     await playAnimation("Animation_Talk_Passionately_withSkin", 1000);
 
-    // Step 1: Chat with AI
+    // Step 1 — Get chat reply from Worker
+    console.log("👉 Sending chat to Worker...");
     const chatResp = await fetch(`${WORKER_URL}/`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ prompt: userInput }),
     });
 
+    if (!chatResp.ok) throw new Error("Chat request failed");
     const { reply } = await chatResp.json();
-    status.textContent = reply || "(skeletal silence…)";
     console.log("💀 Bob:", reply);
+    status.textContent = reply || "(skeletal silence…)";
 
-    // Step 2: Get audio from Worker
+    // Step 2 — Get TTS audio from Worker
+    console.log("👉 Requesting Alloy TTS audio...");
     const ttsResp = await fetch(`${WORKER_URL}/tts`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text: reply, voice: "alloy" }),
     });
 
-    if (!ttsResp.ok) throw new Error("TTS failed");
-
+    if (!ttsResp.ok) throw new Error(`TTS failed: ${ttsResp.status}`);
     const blob = await ttsResp.blob();
-    const audioUrl = URL.createObjectURL(blob);
-    const audio = new Audio(audioUrl);
+
+    // Step 3 — Play audio with fallback for autoplay block
+    const url = URL.createObjectURL(blob);
+    const audio = new Audio(url);
+    console.log("🎧 Playing Alloy TTS from Worker:", url);
 
     audio.onplay = () =>
       (bob.animationName = "Animation_Talk_Passionately_withSkin");
     audio.onended = () =>
       (bob.animationName = "Animation_Long_Breathe_and_Look_Around_withSkin");
 
-    audio.play();
+    try {
+      await audio.play();
+    } catch (err) {
+      console.warn("⚠️ Autoplay blocked, waiting for click to start audio.");
+      status.textContent = "👆 Click anywhere to let Bob speak.";
+      document.body.addEventListener(
+        "click",
+        () => audio.play(),
+        { once: true }
+      );
+    }
   } catch (err) {
-    console.error("Error talking to Bob:", err);
+    console.error("💀 Error talking to Bob:", err);
     status.textContent = "💀 Bob’s connection got spooked.";
   }
 }
 
-// 🧠 Init
+// 🧠 Initialize
 window.addEventListener("DOMContentLoaded", () => {
   if (!bob) return;
   bob.addEventListener("load", () => {
