@@ -218,6 +218,33 @@ window.addEventListener("DOMContentLoaded", () => {
       await new Audio().play().catch(() => {});
     } catch (err) {
       console.warn("⚠️ Unable to unlock audio on activation.", err);
+  const overlay = document.getElementById("wakeOverlay");
+  const handleWakeClick = async () => {
+    console.log("🖱️ Wake click detected");
+    overlay?.remove();
+    try {
+      await new Audio().play().catch(() => {});
+    } catch {}
+    startListening();
+  };
+
+  document.addEventListener("click", activate, { once: true });
+
+  setStatus("👆 Click anywhere to start.");
+
+  bob.addEventListener("load", () => {
+    console.log("✅ Bob ready!");
+  if (overlay) {
+    overlay.addEventListener("click", handleWakeClick, { once: true });
+  }
+
+  setStatus("👆 Click to chat with Bob.");
+
+  bob.addEventListener("load", () => {
+    console.log("✅ Bob ready!");
+    // If the overlay never existed, start listening after the model loads.
+    if (!overlay && !hasStarted) {
+      handleWakeClick();
     }
     startListening();
   };
