@@ -1,5 +1,5 @@
-// bob.js — final polished build
-// Smooth crossfade + mic listening + correct /tts endpoint + robust playback
+// bob.js — Final Smart Version
+// Smooth crossfade + mic listening + correct /tts endpoint + AI chat logic + robust playback
 
 const WORKER_URL = "https://ghostaiv1.alexmkennell.workers.dev";
 const MODEL_BASE = "https://pub-30bcc0b2a7044074a19efdef19f69857.r2.dev/models/";
@@ -21,7 +21,6 @@ const idlePool = [ANIM.IDLE_MAIN];
 const talkPool = [ANIM.TALK_1, ANIM.TALK_2, ANIM.TALK_3, ANIM.TALK_4];
 
 let mvA, mvB, activeMV, inactiveMV, statusEl;
-let currentAnim = null;
 let state = "boot";
 const glbCache = new Map();
 const inflight = new Map();
@@ -78,7 +77,6 @@ async function setAnim(name, { minHoldMs = 800 } = {}) {
   inactiveMV.classList.add("active");
   activeMV.classList.remove("active");
   [activeMV, inactiveMV] = [inactiveMV, activeMV];
-  currentAnim = name;
   if (minHoldMs > 0) await sleep(minHoldMs);
 }
 
@@ -102,25 +100,35 @@ function scheduleIdleSwap() {
   }, 12000 + Math.random() * 5000);
 }
 
-// --- Speech handling ---
+// --- Voice & talking (AI smart version) ---
 let abortSpeech = null;
-async function speakAndAnimate(text) {
-  if (!text) return;
+async function speakAndAnimate(userText) {
+  if (!userText) return;
 
   try {
     state = "talking";
-    setStatus("💬 Talking...");
+    setStatus("💬 Thinking...");
     const talkClip = pick(talkPool);
     await setAnim(talkClip, { minHoldMs: 900 });
 
+    // Step 1 — get AI reply
+    const chatResp = await fetch(`${WORKER_URL}/`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt: userText }),
+    });
+    const data = await chatResp.json();
+    const replyText = data.reply || "Well shoot, reckon I'm tongue-tied, partner.";
+    console.log("🤖 Bob says:", replyText);
+
+    // Step 2 — get TTS audio
     const ac = new AbortController();
     abortSpeech = () => ac.abort();
 
-    console.log("🎯 Fetching TTS from:", `${WORKER_URL}/tts`);
     const resp = await fetch(`${WORKER_URL}/tts`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text }),
+      body: JSON.stringify({ text: replyText }),
       signal: ac.signal,
     });
 
@@ -148,7 +156,7 @@ async function speakAndAnimate(text) {
         console.warn("First play blocked:", err);
       }
 
-      // 🔁 Fallback #1: quick silent user gesture hack
+      // Silent fallback
       try {
         const dummy = new Audio();
         dummy.muted = true;
@@ -161,7 +169,7 @@ async function speakAndAnimate(text) {
         console.warn("Silent gesture fallback failed:", err);
       }
 
-      // 🔁 Fallback #2: explicit user click
+      // Click fallback
       setStatus("👆 Click to hear Bob...");
       document.addEventListener(
         "click",
@@ -270,7 +278,7 @@ async function boot() {
 
     document.addEventListener("keydown", (e) => {
       if (e.key.toLowerCase() === "p") {
-        speakAndAnimate("Well now, partner—I'm a real pun slinger!");
+        speakAndAnimate("Howdy partner! Ready to rustle up some mischief?");
       }
     });
 
