@@ -1,8 +1,10 @@
-// bob.js — Final Smart + Synced + Expressive
-// - No-ghost sequential fades
-// - Talk animation starts exactly on audio.onplay
-// - Talk loops for the whole audio duration
-// - Jaw + fingers driven by live audio amplitude (if bones found)
+// bob.js — Expressive Build 2.0
+// ✅ No-ghost sequential fades
+// ✅ Talk anim starts exactly with audio
+// ✅ Mic paused during playback (no self-echo)
+// ✅ Jaw + fingers driven by audio amplitude (Web Audio)
+// ✅ Eye glow reacts to emotion keywords
+// ✅ Micro-idle gestures so Bob feels alive
 
 const WORKER_URL = "https://ghostaiv1.alexmkennell.workers.dev";
 const MODEL_BASE = "https://pub-30bcc0b2a7044074a19efdef19f69857.r2.dev/models/";
@@ -28,14 +30,14 @@ let state = "boot";
 const glbCache = new Map();
 const inflight = new Map();
 
-// expressive driver state
-let audioCtx = null;
-let analyser = null;
-let srcNode = null;
-let amplitudeRAF = 0;
-let jawBone = null;
-let fingerBones = [];
-let boneSearchDone = false;
+// --- Expressive state (bones/audio/eyes/idle) ---
+let audioCtx = null, analyser = null, srcNode = null, amplitudeRAF = 0;
+let jawBone = null, fingerBones = [], eyeMeshes = [];
+let boneSearchDone = false, eyeSearchDone = false;
+let microIdleRAF = 0, microIdleTimer = 0, microIdleActive = false;
+
+// expose recognition globally so we can pause/resume
+window.recognition = null;
 
 const setStatus = (msg) => {
   statusEl ??= document.getElementById("status");
@@ -43,6 +45,8 @@ const setStatus = (msg) => {
 };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+const lerp = (a, b, t) => a + (b - a) * t;
 const doubleRaf = async () => {
   await new Promise((r) => requestAnimationFrame(r));
   await new Promise((r) => requestAnimationFrame(r));
@@ -81,70 +85,11 @@ async function waitForModelLoaded(mv) {
 }
 
 /* -------------------------------------------------------
-   Smooth transition helper (sequential fade — no overlap)
-   1) Fade OUT active
-   2) Swap src on inactive + load
-   3) Fade IN inactive
-------------------------------------------------------- */
-async function setAnim(name, { minHoldMs = 800, blendMs = 600 } = {}) {
-  if (!inactiveMV || !activeMV) return;
-
-  // Step 1: fade out current (no new model visible yet)
-  activeMV.classList.remove("active"); // triggers opacity:0 on active
-  await sleep(blendMs);
-
-  // Step 2: prepare next on hidden layer
-  const url = await ensureGlbUrl(name);
-  inactiveMV.setAttribute("src", url);
-  await waitForModelLoaded(inactiveMV);
-  try { inactiveMV.currentTime = 0; await inactiveMV.play(); } catch {}
-
-  // Step 3: fade in the new one
-  inactiveMV.classList.add("active");
-  await sleep(blendMs);
-
-  // swap refs (cleanup classes so inactive is neutral)
-  activeMV.classList.remove("inactive");
-  inactiveMV.classList.remove("inactive");
-  [activeMV, inactiveMV] = [inactiveMV, activeMV];
-
-  if (minHoldMs > 0) await sleep(minHoldMs);
-}
-
-// --- Preload animations ---
-async function warmup() {
-  const warm = new Set([ANIM.IDLE_MAIN, ANIM.SHRUG, ANIM.SLEEP, ...talkPool]);
-  let delay = 100;
-  for (const name of warm) {
-    setTimeout(() => ensureGlbUrl(name).catch(() => {}), delay);
-    delay += 100;
-  }
-}
-
-// --- Idle refresh ---
-let idleSwapTimer = null;
-function scheduleIdleSwap() {
-  clearTimeout(idleSwapTimer);
-  idleSwapTimer = setTimeout(async () => {
-    if (state === "idle") await setAnim(ANIM.IDLE_MAIN, { minHoldMs: 1000 });
-    scheduleIdleSwap();
-  }, 12000 + Math.random() * 5000);
-}
-
-/* -------------------------------------------------------
-   Bone discovery (best-effort, safe)
-   We traverse the internal Three.js scene and find bones
-   by fuzzy name match. Works across exports.
+   Scene + bone/eye discovery (fuzzy; safe if not found)
 ------------------------------------------------------- */
 function getThreeScene(mv) {
-  // try common hooks used by <model-viewer>
-  // these are not public API but commonly present
-  return (
-    mv?.model?.scene ||          // often works
-    mv?.scene ||                 // sometimes available
-    mv?.[$scene] ||              // internal symbol
-    null
-  );
+  // not public API, but commonly present in model-viewer instances
+  return (mv?.model?.scene) || mv?.scene || null;
 }
 
 function fuzzyBoneFind(scene) {
@@ -160,29 +105,126 @@ function fuzzyBoneFind(scene) {
     if (!jaw && jawRegex.test(n)) jaw = obj;
     if (fingerRegex.test(n) || handRegex.test(n)) fingers.push(obj);
   });
-
   return { jaw, fingers };
 }
 
-function ensureBonesBound() {
-  if (boneSearchDone) return;
+function fuzzyEyeFind(scene) {
+  if (!scene) return [];
+  const eyes = [];
+  const eyeRegex = /eye|pupil|iris/i;
+  scene.traverse?.((obj) => {
+    const n = obj.name || "";
+    if (eyeRegex.test(n) && obj.material) eyes.push(obj);
+  });
+  return eyes.slice(0, 4); // a couple is enough
+}
+
+function ensureBindings() {
   const scene = getThreeScene(activeMV);
   if (!scene) return;
 
-  const { jaw, fingers } = fuzzyBoneFind(scene);
-  jawBone = jaw || null;
-  // cap finger list to a handful of useful bones to avoid overdriving
-  fingerBones = (fingers || []).slice(0, 6);
-  boneSearchDone = true;
-
-  console.log("🦴 Bones:", {
-    jaw: jawBone?.name || "not found",
-    fingers: fingerBones.map(b => b.name),
-  });
+  if (!boneSearchDone) {
+    const { jaw, fingers } = fuzzyBoneFind(scene);
+    jawBone = jaw || null;
+    fingerBones = (fingers || []).slice(0, 6);
+    boneSearchDone = true;
+    console.log("🦴 Bones:", {
+      jaw: jawBone?.name || "not found",
+      fingers: fingerBones.map(b => b.name),
+    });
+  }
+  if (!eyeSearchDone) {
+    eyeMeshes = fuzzyEyeFind(scene);
+    eyeSearchDone = true;
+    console.log("👀 Eyes:", eyeMeshes.map(m => m.name));
+  }
 }
 
 /* -------------------------------------------------------
-   Mouth + fingers driver using audio amplitude
+   Eye glow by emotion (simple keyword mapping)
+------------------------------------------------------- */
+function setEmotionEyesFromText(text) {
+  ensureBindings();
+  if (!eyeMeshes.length) return;
+
+  const t = (text || "").toLowerCase();
+  let color = { r: 0.2, g: 0.9, b: 0.2 }; // default friendly green
+  let intensity = 0.6;
+
+  if (/angry|mad|furious|rage|stomp|venge/.test(t)) { color = { r: 1.0, g: 0.2, b: 0.1 }; intensity = 1.2; }
+  else if (/sleep|tired|yawn|rest/.test(t)) { color = { r: 1.0, g: 0.7, b: 0.2 }; intensity = 0.4; }
+  else if (/mischief|prank|sneaky|trick/.test(t)) { color = { r: 0.95, g: 0.5, b: 1.0 }; intensity = 0.9; }
+  else if (/sad|blue|lonely/.test(t)) { color = { r: 0.2, g: 0.5, b: 1.0 }; intensity = 0.5; }
+
+  for (const m of eyeMeshes) {
+    // Materials differ; try common props
+    if (m.material) {
+      if (m.material.emissive) {
+        m.material.emissive.setRGB(color.r * intensity, color.g * intensity, color.b * intensity);
+      }
+      if (m.material.emissiveIntensity !== undefined) {
+        m.material.emissiveIntensity = clamp(intensity, 0.2, 2.0);
+      }
+      // fallback tint
+      if (m.material.color && !m.material.emissive) {
+        m.material.color.setRGB(lerp(1, color.r, 0.4), lerp(1, color.g, 0.4), lerp(1, color.b, 0.4));
+      }
+    }
+  }
+}
+
+/* -------------------------------------------------------
+   Micro-idle gestures (random subtle movements)
+------------------------------------------------------- */
+function startMicroIdle() {
+  if (microIdleRAF) return;
+  microIdleActive = true;
+  let t0 = performance.now();
+  let phase = Math.random() * Math.PI * 2;
+
+  const tick = (t) => {
+    if (!microIdleActive || state !== "idle") { microIdleRAF = requestAnimationFrame(tick); return; }
+    const dt = (t - t0) / 1000;
+    t0 = t;
+
+    ensureBindings();
+    const scene = getThreeScene(activeMV);
+    if (scene) {
+      // gentle head sway via jaw parent or head bone if jaw not present
+      const head = jawBone?.parent || null;
+      const s = Math.sin((performance.now() / 1000) * 0.6 + phase) * 0.03;
+      if (head && head.rotation) {
+        head.rotation.y = lerp(head.rotation.y, s, 0.05);
+        head.rotation.x = lerp(head.rotation.x, -s * 0.5, 0.05);
+      }
+      // tiny hand wiggle
+      for (const b of fingerBones) {
+        if (b.rotation) {
+          const k = Math.sin((performance.now() / 1000) * 0.8 + phase) * 0.02;
+          b.rotation.z = lerp(b.rotation.z, k, 0.08);
+        }
+      }
+    }
+
+    // schedule a stronger micro-gesture occasionally
+    if (!microIdleTimer || performance.now() > microIdleTimer) {
+      microIdleTimer = performance.now() + (10000 + Math.random() * 10000);
+      // brief shrug or yawn swap, but keep it subtle
+      if (state === "idle") setAnim(ANIM.IDLE_MAIN, { minHoldMs: 600, blendMs: 500 });
+    }
+
+    microIdleRAF = requestAnimationFrame(tick);
+  };
+  microIdleRAF = requestAnimationFrame(tick);
+}
+function stopMicroIdle() {
+  microIdleActive = false;
+  if (microIdleRAF) cancelAnimationFrame(microIdleRAF);
+  microIdleRAF = 0;
+}
+
+/* -------------------------------------------------------
+   Amplitude driver (jaw + fingers)
 ------------------------------------------------------- */
 function startAmplitudeDriveFor(audio) {
   stopAmplitudeDrive();
@@ -198,53 +240,43 @@ function startAmplitudeDriveFor(audio) {
     analyser.connect(audioCtx.destination);
 
     const data = new Uint8Array(analyser.fftSize);
-    const baseJaw = { value: 0 }; // for smoothing
-    const baseFinger = { value: 0 };
+    const jawSmooth = { v: 0 };
+    const fingerSmooth = { v: 0 };
 
     const drive = () => {
       analyser.getByteTimeDomainData(data);
-      // compute normalized amplitude (0..1)
       let sum = 0;
       for (let i = 0; i < data.length; i++) {
         const v = (data[i] - 128) / 128;
         sum += v * v;
       }
       const rms = Math.sqrt(sum / data.length);
-      const amp = Math.min(1, rms * 6); // boost a bit, clamp
+      const amp = clamp(rms * 6, 0, 1);
 
-      // smooth (lerp)
-      baseJaw.value = baseJaw.value * 0.7 + amp * 0.3;
-      baseFinger.value = baseFinger.value * 0.8 + amp * 0.2;
+      jawSmooth.v = jawSmooth.v * 0.7 + amp * 0.3;
+      fingerSmooth.v = fingerSmooth.v * 0.8 + amp * 0.2;
 
-      // bind bones if not already
-      ensureBonesBound();
+      ensureBindings();
 
-      // drive jaw rotation (open downward: rotate around X if present)
       if (jawBone && jawBone.rotation) {
-        const open = baseJaw.value * 0.35; // ~20 degrees max
-        jawBone.rotation.x = -open; // open jaw down
+        const open = jawSmooth.v * 0.45; // up to ~26°
+        jawBone.rotation.x = -open;
       }
-
-      // subtle finger flex (rotate small amounts)
-      if (fingerBones.length) {
-        const bend = baseFinger.value * 0.25; // gentle
-        for (const b of fingerBones) {
-          if (b.rotation) {
-            b.rotation.x = (b.rotation.x || 0) - bend * 0.15;
-            b.rotation.z = (b.rotation.z || 0) + bend * 0.05;
-          }
+      for (const b of fingerBones) {
+        if (b.rotation) {
+          const bend = fingerSmooth.v * 0.25;
+          b.rotation.x = (b.rotation.x || 0) - bend * 0.15;
+          b.rotation.z = (b.rotation.z || 0) + bend * 0.05;
         }
       }
 
       amplitudeRAF = requestAnimationFrame(drive);
     };
-
     amplitudeRAF = requestAnimationFrame(drive);
   } catch (e) {
     console.warn("Audio analysis unavailable:", e);
   }
 }
-
 function stopAmplitudeDrive() {
   if (amplitudeRAF) cancelAnimationFrame(amplitudeRAF);
   amplitudeRAF = 0;
@@ -257,7 +289,61 @@ function stopAmplitudeDrive() {
 }
 
 /* -------------------------------------------------------
-   Voice & talking (AI smart + synced to audio start)
+   Smooth transition (sequential fade — no overlap)
+   1) Fade OUT visible
+   2) Load new on hidden
+   3) Fade IN new
+------------------------------------------------------- */
+async function setAnim(name, { minHoldMs = 800, blendMs = 600 } = {}) {
+  if (!inactiveMV || !activeMV) return;
+
+  // fade out current
+  activeMV.classList.remove("active"); // triggers opacity->0
+  await sleep(blendMs);
+
+  // prepare next
+  const url = await ensureGlbUrl(name);
+  inactiveMV.setAttribute("src", url);
+  await waitForModelLoaded(inactiveMV);
+  try { inactiveMV.currentTime = 0; await inactiveMV.play(); } catch {}
+
+  // fade in new
+  inactiveMV.classList.add("active");
+  await sleep(blendMs);
+
+  // swap refs
+  [activeMV, inactiveMV] = [inactiveMV, activeMV];
+
+  // reset bone/eye discovery for new model
+  boneSearchDone = false;
+  eyeSearchDone = false;
+
+  if (minHoldMs > 0) await sleep(minHoldMs);
+}
+
+/* -------------------------------------------------------
+   Preload + Idle refresher
+------------------------------------------------------- */
+async function warmup() {
+  const warm = new Set([ANIM.IDLE_MAIN, ANIM.SHRUG, ANIM.SLEEP, ...talkPool]);
+  let delay = 100;
+  for (const name of warm) {
+    setTimeout(() => ensureGlbUrl(name).catch(() => {}), delay);
+    delay += 100;
+  }
+}
+
+let idleSwapTimer = null;
+function scheduleIdleSwap() {
+  clearTimeout(idleSwapTimer);
+  idleSwapTimer = setTimeout(async () => {
+    if (state === "idle") await setAnim(ANIM.IDLE_MAIN, { minHoldMs: 1000, blendMs: 500 });
+    scheduleIdleSwap();
+  }, 12000 + Math.random() * 5000);
+}
+
+/* -------------------------------------------------------
+   Voice & talking (smart + synced + no self-echo)
 ------------------------------------------------------- */
 let abortSpeech = null;
 async function speakAndAnimate(userText) {
@@ -265,9 +351,10 @@ async function speakAndAnimate(userText) {
 
   try {
     state = "talking";
+    stopMicroIdle();
     setStatus("💬 Thinking...");
 
-    // Step 1 — get AI reply first (no talk anim yet)
+    // 1) Get AI reply text
     const chatResp = await fetch(`${WORKER_URL}/`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -277,14 +364,17 @@ async function speakAndAnimate(userText) {
     const replyText = data.reply || "Well shoot, reckon I'm tongue-tied, partner.";
     console.log("🤖 Bob says:", replyText);
 
-    // Step 2 — convert reply to audio
+    // Give the eyes a mood
+    setEmotionEyesFromText(replyText);
+
+    // 2) TTS request (force cowboy tone)
     const ac = new AbortController();
     abortSpeech = () => ac.abort();
 
     const resp = await fetch(`${WORKER_URL}/tts`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text: replyText }),
+      body: JSON.stringify({ text: replyText, voice: "verse" }),
       signal: ac.signal,
     });
 
@@ -293,6 +383,7 @@ async function speakAndAnimate(userText) {
       console.warn("⚠️ Worker returned short or invalid audio response.");
       setStatus("⚠️ Invalid audio response");
       state = "idle";
+      startMicroIdle();
       return;
     }
 
@@ -301,75 +392,53 @@ async function speakAndAnimate(userText) {
     const audio = new Audio(url);
     audio.playbackRate = 1.0;
 
-    // When audio actually starts, kick talk animation + amplitude driving
+    // 🔇 Pause mic to avoid self-echo
+    if (window.recognition) { try { window.recognition.stop(); } catch {} }
+
+    // Start talk anim + amplitude driver EXACTLY when audio starts
     let talkStarted = false;
-    const onPlay = async () => {
+    audio.addEventListener("play", async () => {
       if (talkStarted) return;
       talkStarted = true;
+      await setAnim(pick(talkPool), { minHoldMs: 0, blendMs: 350 });
 
-      // pick a talk clip and keep re-applying it to cover full duration
-      const talkClip = pick(talkPool);
-      const blendMs = 400;
-
-      // ensure bones can be found for the current active model
-      boneSearchDone = false;
-      ensureBonesBound();
-
-      // start talk clip exactly on audio play
-      await setAnim(talkClip, { minHoldMs: 0, blendMs });
-
-      // loop/refresh talk for the whole audio duration
-      const ensureTalking = () => {
-        if (state !== "talking") return;
-        // re-issue the same talk anim every ~2.2s to avoid end jitter
+      // loop-refresh talk while audio is playing
+      const loopTick = () => {
+        if (state !== "talking" || audio.paused || audio.ended) return;
         setTimeout(() => {
-          if (state === "talking") setAnim(talkClip, { minHoldMs: 0, blendMs });
-          ensureTalking();
-        }, 2200);
+          if (state === "talking" && !audio.ended) {
+            setAnim(pick(talkPool), { minHoldMs: 0, blendMs: 300 });
+            loopTick();
+          }
+        }, 2000 + Math.random() * 500);
       };
-      ensureTalking();
+      loopTick();
 
-      // start mouth/finger driving
       startAmplitudeDriveFor(audio);
-    };
+    }, { once: true });
 
-    audio.addEventListener("play", onPlay, { once: true });
-
-    // Robust playback (autoplay restrictions)
-    const playAudio = async () => {
+    // robust playback (autoplay)
+    const tryPlay = async () => {
       try {
-        const playPromise = audio.play();
-        if (playPromise !== undefined) await playPromise;
-        return;
-      } catch (err) {
-        console.warn("First play blocked:", err);
-      }
-
+        const p = audio.play();
+        if (p !== undefined) await p;
+        return true;
+      } catch {}
       try {
         const dummy = new Audio();
         dummy.muted = true;
         await dummy.play().catch(() => {});
-        await new Promise((r) => setTimeout(r, 100));
+        await new Promise((r) => setTimeout(r, 80));
         await audio.play();
-        console.log("✅ Recovered from autoplay block");
-        return;
-      } catch (err) {
-        console.warn("Silent gesture fallback failed:", err);
-      }
-
+        return true;
+      } catch {}
       setStatus("👆 Click to hear Bob...");
-      document.addEventListener(
-        "click",
-        () => {
-          audio.play().then(() => {
-            setStatus("💬 Playing response...");
-          }).catch(console.error);
-        },
-        { once: true }
-      );
+      document.addEventListener("click", () => {
+        audio.play().then(() => setStatus("💬 Playing response...")).catch(console.error);
+      }, { once: true });
+      return false;
     };
-
-    await playAudio();
+    await tryPlay();
 
     audio.onended = async () => {
       stopAmplitudeDrive();
@@ -377,22 +446,31 @@ async function speakAndAnimate(userText) {
       state = "idle";
       setStatus("👂 Listening...");
       await setAnim(ANIM.IDLE_MAIN, { minHoldMs: 600, blendMs: 500 });
+
+      // 🔊 Resume mic for next user line
+      if (window.recognition) { try { window.recognition.start(); } catch {} }
+
+      startMicroIdle();
     };
   } catch (err) {
     console.error("Speech error:", err);
     stopAmplitudeDrive();
     setStatus("⚠️ Speech error — see console");
     state = "idle";
+    startMicroIdle();
   }
 }
 
-// --- Inactivity ---
+/* -------------------------------------------------------
+   Inactivity → Sleep
+------------------------------------------------------- */
 let lastActivity = Date.now();
 function bumpActivity() { lastActivity = Date.now(); }
 setInterval(async () => {
   const idleMs = Date.now() - lastActivity;
   if (state === "idle" && idleMs > 45000) {
     state = "sleeping";
+    stopMicroIdle();
     setStatus("😴 Sleeping...");
     await setAnim(ANIM.SLEEP, { minHoldMs: 1500, blendMs: 600 });
   }
@@ -403,38 +481,46 @@ document.addEventListener("pointerdown", () => {
     state = "idle";
     setStatus("👂 Listening...");
     setAnim(ANIM.IDLE_MAIN, { minHoldMs: 800, blendMs: 500 });
+    startMicroIdle();
   }
 }, { passive: true });
 
-// --- Microphone ---
+/* -------------------------------------------------------
+   Microphone (continuous)
+------------------------------------------------------- */
 window.SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 if (window.SpeechRecognition) {
-  const recognition = new SpeechRecognition();
-  recognition.continuous = true;
-  recognition.interimResults = false;
-  recognition.lang = "en-US";
+  const rec = new SpeechRecognition();
+  rec.continuous = true;
+  rec.interimResults = false;
+  rec.lang = "en-US";
+  window.recognition = rec;
 
-  recognition.onresult = async (event) => {
+  rec.onresult = async (event) => {
     const transcript = event.results[event.results.length - 1][0].transcript.trim();
     if (transcript.length > 0) {
       console.log("🎤 Heard:", transcript);
       await speakAndAnimate(transcript);
     }
   };
-  recognition.onerror = (e) => console.warn("Speech recognition error:", e.error);
-  recognition.onend = () => { if (state === "idle") recognition.start(); };
+  rec.onerror = (e) => console.warn("Speech recognition error:", e.error);
+  rec.onend = () => { if (state === "idle") rec.start(); };
 
   window.addEventListener("click", () => {
     try {
-      recognition.start();
+      rec.start();
       setStatus("👂 Listening (mic on)...");
     } catch (err) {
       console.warn("Mic start error:", err);
     }
   }, { once: true });
-} else console.warn("SpeechRecognition not supported.");
+} else {
+  console.warn("SpeechRecognition not supported in this browser.");
+}
 
-// --- Boot ---
+/* -------------------------------------------------------
+   Boot
+------------------------------------------------------- */
 async function boot() {
   try {
     console.log("🟢 Booting Bob...");
@@ -461,6 +547,7 @@ async function boot() {
     state = "idle";
     setStatus("👂 Listening...");
     scheduleIdleSwap();
+    startMicroIdle();
 
     document.addEventListener("keydown", (e) => {
       if (e.key.toLowerCase() === "p") {
@@ -480,4 +567,5 @@ window.addEventListener("DOMContentLoaded", () => {
   boot();
 });
 
+// debug handle
 window.Bob = { setAnim, speak: speakAndAnimate, state: () => state };
