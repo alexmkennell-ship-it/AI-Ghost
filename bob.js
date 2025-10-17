@@ -40,9 +40,40 @@ function setStatus(msg) { if (statusEl) statusEl.textContent = msg; }
 function bumpActivity() { lastActivity = Date.now(); }
 
 // Wait until <model-viewer> finishes loading the new GLB
-function waitForModelLoad() {
+function waitForModelLoad(timeout = 5000) {
   return new Promise((resolve) => {
-    bob.addEventListener("load", resolve, { once: true });
+    if (!bob) {
+      resolve();
+      return;
+    }
+
+    let settled = false;
+    const cleanup = () => {
+      if (settled) return;
+      settled = true;
+      bob.removeEventListener("load", onLoad);
+      bob.removeEventListener("error", onError);
+      clearTimeout(timer);
+      resolve();
+    };
+
+    const onLoad = () => {
+      console.log("✅ Model loaded");
+      cleanup();
+    };
+
+    const onError = (event) => {
+      console.warn("⚠️ Model load error", event);
+      cleanup();
+    };
+
+    const timer = setTimeout(() => {
+      console.warn("⏱️ Model load timeout — continuing");
+      cleanup();
+    }, timeout);
+
+    bob.addEventListener("load", onLoad, { once: true });
+    bob.addEventListener("error", onError, { once: true });
   });
 }
 
@@ -172,8 +203,7 @@ async function wakeSequence(greet = true) {
   await setAnim(ANIM.WAKE, 2500);
   await setAnim(ANIM.STAND, 1500);
   if (greet) await setAnim(ANIM.WAVE, 1200);
-  await setAnim(ANIM.IDLE_MAIN);
-  await waitForModelLoad(); // ✅ ensures model is loaded before mic starts
+  await setAnim(ANIM.IDLE_MAIN); // setAnim already waits for the model to load
   state = "idle";
   setStatus("🎙 Say somethin’, partner…");
   bumpActivity();
