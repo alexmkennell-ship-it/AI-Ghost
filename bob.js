@@ -166,7 +166,7 @@ async function speakAndAnimate(userText){
         ttsResp=await fetch(`${WORKER_URL}/tts`,{
           method:"POST",
           headers:{"Content-Type":"application/json"},
-          body:JSON.stringify({text:replyText,voice:"copper"}),
+          body:JSON.stringify({text:replyText,voice:"onyx"}),
           signal:ac.signal
         });
         if(!ttsResp.ok){
@@ -186,6 +186,7 @@ async function speakAndAnimate(userText){
     const url=URL.createObjectURL(blob);
     const audio=new Audio(url);
     audio.playbackRate=0.9;
+    audio.preservesPitch = false; // drop actual pitch for gravelly drawl
 
     // lock mic
     micLocked=true;if(window.recognition)try{window.recognition.stop();}catch{}
