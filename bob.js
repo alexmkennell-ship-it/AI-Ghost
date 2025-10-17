@@ -434,7 +434,40 @@ window.addEventListener("DOMContentLoaded", () => {
 
   const unlockAudio = async () => {
     try {
-      await new Audio().play().catch(() => {});
+      const AudioContext = window.AudioContext || window.webkitAudioContext;
+      if (AudioContext) {
+        if (!unlockAudio.ctx) {
+          unlockAudio.ctx = new AudioContext();
+        }
+
+        const ctx = unlockAudio.ctx;
+        if (ctx.state === "suspended") {
+          await ctx.resume();
+        }
+
+        const buffer = ctx.createBuffer(1, 1, 22050);
+        const source = ctx.createBufferSource();
+        source.buffer = buffer;
+        source.connect(ctx.destination);
+        source.start(0);
+        source.stop(0);
+        return;
+      }
+
+      const silentMp3 =
+        "data:audio/mp3;base64,//uQxAAAAAAAAAAAAAAAAAAAAAAAWGluZwAAAA8AAAACAAACcQCA";
+      const audio = new Audio(silentMp3);
+      audio.muted = true;
+
+      const playPromise = audio.play();
+      const timeout = new Promise((resolve) => setTimeout(resolve, 350));
+      await Promise.race([
+        Promise.resolve(playPromise).catch(() => {}),
+        timeout,
+      ]);
+
+      audio.pause();
+      audio.remove();
     } catch (err) {
       console.warn("⚠️ Unable to unlock audio on activation.", err);
     }
