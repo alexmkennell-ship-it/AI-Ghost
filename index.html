@@ -75,6 +75,15 @@
     const WORKER_URL = "https://ghostaiv1.alexmkennell.workers.dev";
 
     const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
+    
+const overlay = document.getElementById("wakeOverlay");
+
+overlay.addEventListener("click", async () => {
+  console.log("🖱️ Wake click detected");
+  overlay.remove(); // Remove overlay so user can move Bob later
+  try { await new Audio().play().catch(() => {}); } catch {}
+  await wakeSequence(true);
+});
 
     async function playAnimation(name, duration = 2500) {
       if (!bob) return;
