@@ -26,16 +26,101 @@ const talkPool = [ANIM.TALK_1, ANIM.TALK_2, ANIM.TALK_3, ANIM.TALK_4, ANIM.AGREE
 
 let state = "idle";
 let lastActivity = Date.now();
-let talkAnimTimer = null;
 let sleepTimer = null;
 let hasStarted = false;
 let idleTimer = null;
+let idleSwapInFlight = false;
 
 const rand = (min, max) => Math.floor(min + Math.random() * (max - min + 1));
 const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
 const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
 function setStatus(msg) { if (statusEl) statusEl.textContent = msg; }
 function bumpActivity() { lastActivity = Date.now(); }
+
+let currentAnim = null;
+
+const glbCache = new Map();
+const glbPreloaders = new Map();
+
+async function ensureGlbUrl(name) {
+  if (glbCache.has(name)) {
+    return glbCache.get(name);
+  }
+
+  if (glbPreloaders.has(name)) {
+    return glbPreloaders.get(name);
+  }
+
+  const loader = (async () => {
+    const response = await fetch(`${MODEL_BASE}${name}.glb`);
+    if (!response.ok) {
+      throw new Error(`Failed to preload ${name}: ${response.status}`);
+    }
+
+    const blob = await response.blob();
+    const objectUrl = URL.createObjectURL(blob);
+    glbCache.set(name, objectUrl);
+    return objectUrl;
+  })();
+
+  glbPreloaders.set(name, loader);
+
+  try {
+    const url = await loader;
+    return url;
+  } catch (err) {
+    glbCache.delete(name);
+    throw err;
+  } finally {
+    glbPreloaders.delete(name);
+  }
+}
+
+function schedulePreload(name, delay = 0) {
+  if (glbCache.has(name) || glbPreloaders.has(name)) return;
+
+  const start = () => {
+    ensureGlbUrl(name).catch((err) =>
+      console.warn(`⚠️ Failed to preload ${name}.`, err)
+    );
+  };
+
+  const trigger = () => {
+    if (typeof window.requestIdleCallback === "function") {
+      window.requestIdleCallback(() => start(), { timeout: 4000 });
+    } else {
+      start();
+    }
+  };
+
+  if (delay > 0) {
+    setTimeout(trigger, delay);
+  } else {
+    trigger();
+  }
+}
+
+function warmupAnimations() {
+  const essential = new Set([
+    ANIM.IDLE_MAIN,
+    ANIM.SHRUG,
+    ANIM.SLEEP,
+    ...idlePool,
+    ...talkPool,
+  ]);
+
+  let delay = 350;
+  essential.forEach((clip) => {
+    schedulePreload(clip, delay);
+    delay += 200;
+  });
+}
+
+function pickDistinct(pool) {
+  if (!currentAnim) return pick(pool);
+  const options = pool.filter((name) => name !== currentAnim);
+  return pick(options.length ? options : pool);
+}
 
 // Wait until <model-viewer> finishes loading the new GLB
 function waitForModelLoad(timeout = 5000) {
@@ -78,9 +163,42 @@ function waitForModelLoad(timeout = 5000) {
 // Change animation safely
 async function setAnim(name, holdMs = 0) {
   if (!bob) return;
-  bob.src = `${MODEL_BASE}${name}.glb`;
-  console.log("🎞️ Animation:", name);
-  await waitForModelLoad();
+
+  let nextUrl = glbCache.get(name) || null;
+  if (!nextUrl) {
+    try {
+      nextUrl = await ensureGlbUrl(name);
+    } catch (err) {
+      console.warn(`⚠️ Falling back to direct load for ${name}.`, err);
+      nextUrl = `${MODEL_BASE}${name}.glb`;
+    }
+  }
+
+  const currentSrc = bob.getAttribute("src");
+  const needsSrcSwap = currentSrc !== nextUrl;
+
+  if (needsSrcSwap) {
+    bob.setAttribute("src", nextUrl);
+    console.log("🎞️ Animation:", name);
+    await waitForModelLoad();
+
+    await new Promise((resolve) =>
+      requestAnimationFrame(() => requestAnimationFrame(resolve))
+    );
+  } else {
+    console.log("🎞️ Animation (restart):", name);
+  }
+
+  // Ensure the clip starts from the beginning and is actively playing.
+  try {
+    bob.currentTime = 0;
+    bob.play();
+  } catch (err) {
+    console.warn("⚠️ Unable to force animation playback.", err);
+  }
+
+  currentAnim = name;
+
   if (holdMs > 0) await sleep(holdMs);
 }
 
@@ -88,9 +206,14 @@ async function setAnim(name, holdMs = 0) {
 function scheduleIdleSwap() {
   clearInterval(idleTimer);
   idleTimer = setInterval(() => {
-    if (state !== "idle") return;
-    const next = pick(idlePool);
-    setAnim(next);
+    if (state !== "idle" || idleSwapInFlight) return;
+    const next = pickDistinct(idlePool);
+    idleSwapInFlight = true;
+    setAnim(next)
+      .catch((err) => console.warn("⚠️ Idle swap failed.", err))
+      .finally(() => {
+        idleSwapInFlight = false;
+      });
   }, rand(40000, 70000));
 }
 
@@ -149,13 +272,48 @@ async function handleUserInput(userInput) {
     const url = URL.createObjectURL(blob);
     const audio = new Audio(url);
 
-    state = "talking";
-    startTalkingLoop();
+    let audibleStartTimer = null;
+
+    const cleanupPlaybackStarters = () => {
+      audio.removeEventListener("playing", onPlaybackStart);
+      audio.removeEventListener("play", onPlaybackStart);
+      audio.removeEventListener("timeupdate", onAudibleProgress);
+      if (audibleStartTimer) {
+        clearTimeout(audibleStartTimer);
+        audibleStartTimer = null;
+      }
+    };
+
+    const kickOffTalking = () => {
+      cleanupPlaybackStarters();
+      state = "talking";
+      startTalkingLoop();
+    };
+
+    const onAudibleProgress = () => {
+      if (audio.currentTime >= 0.12) {
+        kickOffTalking();
+      }
+    };
+
+    const onPlaybackStart = () => {
+      if (audio.currentTime >= 0.12) {
+        kickOffTalking();
+      }
+    };
+
+    audio.addEventListener("playing", onPlaybackStart);
+    audio.addEventListener("play", onPlaybackStart);
+    audio.addEventListener("timeupdate", onAudibleProgress);
+
+    audibleStartTimer = setTimeout(kickOffTalking, 900);
 
     audio.onended = async () => {
-      stopTalkingLoop();
+      cleanupPlaybackStarters();
+      await stopTalkingLoop();
       await setAnim(ANIM.IDLE_MAIN);
       state = "idle";
+      URL.revokeObjectURL(url);
     };
 
     try {
@@ -172,17 +330,45 @@ async function handleUserInput(userInput) {
 }
 
 // Talking animation loop
-function startTalkingLoop() {
-  clearInterval(talkAnimTimer);
-  talkAnimTimer = setInterval(() => {
-    if (state !== "talking") return;
-    setAnim(pick(talkPool));
-  }, rand(1200, 2000));
+let talkLoopActive = false;
+let talkLoopPromise = null;
+
+async function runTalkingLoop() {
+  while (talkLoopActive && state === "talking") {
+    const next = pickDistinct(talkPool);
+    await setAnim(next);
+
+    if (!talkLoopActive || state !== "talking") break;
+    await sleep(rand(1500, 2400));
+  }
 }
 
-function stopTalkingLoop() {
-  clearInterval(talkAnimTimer);
-  talkAnimTimer = null;
+function startTalkingLoop() {
+  if (talkLoopActive) return talkLoopPromise;
+  talkLoopActive = true;
+
+  talkLoopPromise = (async () => {
+    try {
+      await runTalkingLoop();
+    } finally {
+      talkLoopActive = false;
+    }
+  })();
+
+  return talkLoopPromise;
+}
+
+async function stopTalkingLoop() {
+  if (!talkLoopActive && !talkLoopPromise) return;
+  talkLoopActive = false;
+
+  try {
+    await talkLoopPromise;
+  } catch (err) {
+    console.warn("⚠️ Talking loop ended with an error.", err);
+  } finally {
+    talkLoopPromise = null;
+  }
 }
 
 // Sleep mode
@@ -202,7 +388,11 @@ function startListening() {
   state = "idle";
   bumpActivity();
   setStatus("👂 Listening...");
-  setAnim(ANIM.IDLE_MAIN);
+  schedulePreload(ANIM.SHRUG);
+  warmupAnimations();
+  setAnim(ANIM.IDLE_MAIN).catch((err) =>
+    console.warn("⚠️ Failed to start idle animation immediately.", err)
+  );
   scheduleIdleSwap();
   startVoiceRecognition();
 }
@@ -211,52 +401,51 @@ function startListening() {
 window.addEventListener("DOMContentLoaded", () => {
   if (!bob) return;
 
-  const activate = async () => {
-    if (hasStarted) return;
-    console.log("🖱️ Activation click detected");
+  const overlay = document.getElementById("wakeOverlay");
+
+  const unlockAudio = async () => {
     try {
       await new Audio().play().catch(() => {});
     } catch (err) {
       console.warn("⚠️ Unable to unlock audio on activation.", err);
-  const overlay = document.getElementById("wakeOverlay");
-  const handleWakeClick = async () => {
+    }
+  };
+
+  const activate = async () => {
+    if (hasStarted) return;
+    console.log("🖱️ Activation click detected");
+    await unlockAudio();
+    startListening();
+  };
+
+  const handleWakeClick = async (event) => {
+    event?.stopPropagation?.();
     console.log("🖱️ Wake click detected");
     overlay?.remove();
-    try {
-      await new Audio().play().catch(() => {});
-    } catch {}
-    startListening();
+    await activate();
   };
 
-  document.addEventListener("click", activate, { once: true });
-
-  setStatus("👆 Click anywhere to start.");
-
-  bob.addEventListener("load", () => {
-    console.log("✅ Bob ready!");
   if (overlay) {
     overlay.addEventListener("click", handleWakeClick, { once: true });
+    setStatus("👆 Click to chat with Bob.");
+  } else {
+    setStatus("👆 Click anywhere to start.");
   }
 
-  setStatus("👆 Click to chat with Bob.");
-
   bob.addEventListener("load", () => {
     console.log("✅ Bob ready!");
-    // If the overlay never existed, start listening after the model loads.
     if (!overlay && !hasStarted) {
-      handleWakeClick();
+      activate();
     }
-    startListening();
-  };
+  });
 
   document.addEventListener("click", activate, { once: true });
-
-  setStatus("👆 Click anywhere to start.");
-
-  bob.addEventListener("load", () => {
-    console.log("✅ Bob ready!");
-  });
 
   document.addEventListener("click", bumpActivity, { passive: true });
   document.addEventListener("keydown", bumpActivity, { passive: true });
+});
+
+window.addEventListener("beforeunload", () => {
+  glbCache.forEach((url) => URL.revokeObjectURL(url));
+  glbCache.clear();
 });
