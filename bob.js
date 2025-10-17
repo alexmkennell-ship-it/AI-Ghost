@@ -214,6 +214,10 @@ window.addEventListener("DOMContentLoaded", () => {
   const activate = async () => {
     if (hasStarted) return;
     console.log("🖱️ Activation click detected");
+  const overlay = document.getElementById("wakeOverlay");
+  const handleWakeClick = async () => {
+    console.log("🖱️ Wake click detected");
+    overlay?.remove();
     try {
       await new Audio().play().catch(() => {});
     } catch {}
@@ -226,6 +230,18 @@ window.addEventListener("DOMContentLoaded", () => {
 
   bob.addEventListener("load", () => {
     console.log("✅ Bob ready!");
+  if (overlay) {
+    overlay.addEventListener("click", handleWakeClick, { once: true });
+  }
+
+  setStatus("👆 Click to chat with Bob.");
+
+  bob.addEventListener("load", () => {
+    console.log("✅ Bob ready!");
+    // If the overlay never existed, start listening after the model loads.
+    if (!overlay && !hasStarted) {
+      handleWakeClick();
+    }
   });
 
   document.addEventListener("click", bumpActivity, { passive: true });
