@@ -1,6 +1,5 @@
-// bob.js — Expressive Build 2.4
-// Adds voice wake-up (“Hey Bob”), randomized idle actions,
-// smooth pose blending, and no ghost overlap.
+// bob.js — Expressive Build 2.5
+// Sleep zoom-out, wake stand-up, smooth pose carryover & idle randomization
 
 const WORKER_URL = "https://ghostaiv1.alexmkennell.workers.dev";
 const MODEL_BASE = "https://pub-30bcc0b2a7044074a19efdef19f69857.r2.dev/models/";
@@ -16,30 +15,30 @@ const ANIM = {
   TALK_4: "Animation_Talk_with_Right_Hand_Open_withSkin",
   YAWN: "Animation_Yawn_withSkin",
 };
+const idleVariety=[ANIM.IDLE_MAIN,ANIM.SHRUG,ANIM.YAWN];
+const talkPool=[ANIM.TALK_1,ANIM.TALK_2,ANIM.TALK_3,ANIM.TALK_4];
 
-const idleVariety = [ANIM.IDLE_MAIN, ANIM.SHRUG, ANIM.YAWN];
-const talkPool = [ANIM.TALK_1, ANIM.TALK_2, ANIM.TALK_3, ANIM.TALK_4];
-
-let mvA, mvB, activeMV, inactiveMV, statusEl;
-let state = "boot", micLocked = false, animLock = false;
-const glbCache = new Map(), inflight = new Map();
-window.recognition = null;
+let mvA,mvB,activeMV,inactiveMV,statusEl;
+let state="boot",micLocked=false,animLock=false,sleepLock=false;
+const glbCache=new Map(),inflight=new Map();
+window.recognition=null;
 
 // ---------- utils ----------
-const setStatus = (m) => (statusEl ??= document.getElementById("status")) && (statusEl.textContent = m);
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const pick = (a) => a[Math.floor(Math.random() * a.length)];
-const clamp = (v,a,b)=>Math.min(b,Math.max(a,v));
+const setStatus=(m)=>(statusEl??=document.getElementById("status"))&&(statusEl.textContent=m);
+const sleep=(ms)=>new Promise(r=>setTimeout(r,ms));
+const pick=(a)=>a[Math.floor(Math.random()*a.length)];
+const clamp=(v,a,b)=>Math.min(b,Math.max(a,v));
 const lerp=(a,b,t)=>a+(b-a)*t;
 const doubleRaf=async()=>{await new Promise(r=>requestAnimationFrame(r));await new Promise(r=>requestAnimationFrame(r));};
+function setCameraOrbit(orbit){if(activeMV)activeMV.setAttribute("camera-orbit",orbit);}
 
-// ---------- GLB handling ----------
+// ---------- model loader ----------
 async function ensureGlbUrl(name){
   if(glbCache.has(name))return glbCache.get(name);
   if(inflight.has(name))return inflight.get(name);
   const p=(async()=>{
     const res=await fetch(`${MODEL_BASE}${name}.glb`,{mode:"cors"});
-    if(!res.ok)throw new Error(`Failed to fetch ${name}`);
+    if(!res.ok)throw new Error(`Fetch ${name} failed`);
     const blob=await res.blob();const url=URL.createObjectURL(blob);
     glbCache.set(name,url);return url;
   })();
@@ -57,9 +56,7 @@ async function waitForModelLoaded(mv){
 function getThreeScene(mv){return mv?.model?.scene||mv?.scene||null;}
 
 // ---------- bones / eyes ----------
-let audioCtx, analyser, srcNode, amplitudeRAF;
-let jawBone=null,fingerBones=[],eyeMeshes=[];
-let boneSearchDone=false,eyeSearchDone=false;
+let jawBone=null,fingerBones=[],eyeMeshes=[],boneSearchDone=false,eyeSearchDone=false;
 function fuzzyBoneFind(scene){
   if(!scene)return{jaw:null,fingers:[]};
   let jaw=null;const fingers=[];
@@ -79,13 +76,8 @@ function fuzzyEyeFind(scene){
 }
 function ensureBindings(){
   const s=getThreeScene(activeMV);if(!s)return;
-  if(!boneSearchDone){
-    const{jaw,fingers}=fuzzyBoneFind(s);
-    jawBone=jaw;fingerBones=fingers.slice(0,6);boneSearchDone=true;
-  }
-  if(!eyeSearchDone){
-    eyeMeshes=fuzzyEyeFind(s);eyeSearchDone=true;
-  }
+  if(!boneSearchDone){const{jaw,fingers}=fuzzyBoneFind(s);jawBone=jaw;fingerBones=fingers.slice(0,6);boneSearchDone=true;}
+  if(!eyeSearchDone){eyeMeshes=fuzzyEyeFind(s);eyeSearchDone=true;}
 }
 function setEmotionEyesFromText(t){
   ensureBindings();if(!eyeMeshes.length)return;
@@ -100,7 +92,8 @@ function setEmotionEyesFromText(t){
   }
 }
 
-// ---------- amplitude drive ----------
+// ---------- amplitude ----------
+let audioCtx,analyser,srcNode,amplitudeRAF;
 function startAmplitudeDriveFor(audio){
   stopAmplitudeDrive();
   try{
@@ -125,40 +118,24 @@ function startAmplitudeDriveFor(audio){
     amplitudeRAF=requestAnimationFrame(drive);
   }catch(e){console.warn("Audio analysis unavailable:",e);}
 }
-function stopAmplitudeDrive(){
-  if(amplitudeRAF)cancelAnimationFrame(amplitudeRAF);
-  amplitudeRAF=0;try{srcNode?.disconnect();analyser?.disconnect();}catch{}
-  srcNode=null;analyser=null;
-}
+function stopAmplitudeDrive(){if(amplitudeRAF)cancelAnimationFrame(amplitudeRAF);amplitudeRAF=0;try{srcNode?.disconnect();analyser?.disconnect();}catch{}srcNode=null;analyser=null;}
 
-// ---------- pose capture ----------
-function capturePose(mv){
-  const s=getThreeScene(mv);if(!s)return{};
-  const pose={};s.traverse?.(o=>{
-    if(o.isBone)pose[o.name]={r:o.rotation.clone(),p:o.position.clone()};
-  });return pose;
-}
-function applyPose(mv,pose){
-  const s=getThreeScene(mv);if(!s||!pose)return;
-  s.traverse?.(o=>{
-    const p=pose[o.name];
-    if(p){o.rotation.copy(p.r);o.position.copy(p.p);}
-  });
-}
+// ---------- pose ----------
+function capturePose(mv){const s=getThreeScene(mv);if(!s)return{};const p={};s.traverse?.(o=>{if(o.isBone)p[o.name]={r:o.rotation.clone(),pos:o.position.clone()};});return p;}
+function applyPose(mv,p){const s=getThreeScene(mv);if(!s)return;s.traverse?.(o=>{const t=p[o.name];if(t){o.rotation.copy(t.r);o.position.copy(t.pos);}});}
 
-// ---------- animation transitions ----------
-let animLock=false;
-async function setAnim(name,{minHoldMs=800,blendMs=400}={}){
+// ---------- animation core ----------
+async function setAnim(name,{minHoldMs=800,blendMs=300}={}){
   if(animLock)return;
   animLock=true;
   try{
-    const prevPose=capturePose(activeMV);
+    const pose=capturePose(activeMV);
     activeMV.classList.remove("active");
     await sleep(blendMs);
     const url=await ensureGlbUrl(name);
     inactiveMV.setAttribute("src",url);
     await waitForModelLoaded(inactiveMV);
-    applyPose(inactiveMV,prevPose);
+    applyPose(inactiveMV,pose);
     try{inactiveMV.currentTime=0;await inactiveMV.play();}catch{}
     inactiveMV.classList.add("active");
     await sleep(blendMs);
@@ -174,122 +151,70 @@ function startMicroIdle(){
   if(microIdleRAF)return;microIdleActive=true;const p=Math.random()*Math.PI*2;
   const tick=()=>{
     if(!microIdleActive||state!=="idle"){microIdleRAF=requestAnimationFrame(tick);return;}
-    ensureBindings();
-    const s=getThreeScene(activeMV);if(s){
-      const h=jawBone?.parent;
+    ensureBindings();const s=getThreeScene(activeMV);
+    if(s){const h=jawBone?.parent;
       const k=Math.sin(performance.now()/1000*.6+p)*.03;
-      if(h&&h.rotation){
-        h.rotation.y=lerp(h.rotation.y,k,.05);
-        h.rotation.x=lerp(h.rotation.x,-k*.5,.05);
-      }
-      for(const b of fingerBones)
-        if(b.rotation)b.rotation.z=lerp(b.rotation.z,Math.sin(performance.now()/1000*.8+p)*.02,.08);
+      if(h&&h.rotation){h.rotation.y=lerp(h.rotation.y,k,.05);h.rotation.x=lerp(h.rotation.x,-k*.5,.05);}
     }
     microIdleRAF=requestAnimationFrame(tick);
   };
   microIdleRAF=requestAnimationFrame(tick);
 }
-function stopMicroIdle(){
-  microIdleActive=false;
-  if(microIdleRAF)cancelAnimationFrame(microIdleRAF);
-  microIdleRAF=0;
-}
+function stopMicroIdle(){microIdleActive=false;if(microIdleRAF)cancelAnimationFrame(microIdleRAF);microIdleRAF=0;}
 
 // ---------- speaking ----------
 async function speakAndAnimate(userText){
   if(!userText)return;
   try{
     state="talking";stopMicroIdle();setStatus("💬 Thinking...");
-    const chatResp=await fetch(`${WORKER_URL}/`,{
-      method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({prompt:userText})
-    });
-    const data=await chatResp.json();
-    const replyText=data.reply||"Well shoot, reckon I'm tongue-tied, partner.";
-    console.log("🤖 Bob says:",replyText);
-    setEmotionEyesFromText(replyText);
-
-    const ac=new AbortController();
-    const maxRetries=2;let ttsResp,ttsBuffer;
-    for(let attempt=0;attempt<=maxRetries;attempt++){
-      try{
-        ttsResp=await fetch(`${WORKER_URL}/tts`,{
-          method:"POST",headers:{"Content-Type":"application/json"},
-          body:JSON.stringify({text:replyText,voice:"onyx"}),signal:ac.signal
-        });
-        if(!ttsResp.ok){
-          const eTxt=await ttsResp.text();
-          console.warn(`TTS attempt ${attempt} failed:`,ttsResp.status,eTxt);
-          if(attempt===maxRetries)throw new Error(`TTS failed ${ttsResp.status}`);
-          continue;
-        }
-        ttsBuffer=await ttsResp.arrayBuffer();break;
-      }catch(e){
-        if(attempt===maxRetries){
-          setStatus("⚠️ Couldn't speak — server error");
-          state="idle";startMicroIdle();return;
-        }
-      }
-    }
-
-    const blob=new Blob([ttsBuffer],{type:"audio/mpeg"});
-    const url=URL.createObjectURL(blob);
-    const audio=new Audio(url);
+    const chat=await fetch(`${WORKER_URL}/`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({prompt:userText})});
+    const data=await chat.json();const reply=data.reply||"Well shoot, reckon I'm tongue-tied, partner.";
+    console.log("🤖 Bob says:",reply);setEmotionEyesFromText(reply);
+    const ac=new AbortController();let buf;
+    for(let i=0;i<2;i++){try{
+      const r=await fetch(`${WORKER_URL}/tts`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({text:reply,voice:"onyx"}),signal:ac.signal});
+      if(!r.ok){await r.text();continue;}buf=await r.arrayBuffer();break;
+    }catch{}}
+    if(!buf){setStatus("⚠️ TTS error");state="idle";startMicroIdle();return;}
+    const audio=new Audio(URL.createObjectURL(new Blob([buf],{type:"audio/mpeg"})));
     audio.playbackRate=0.9;audio.preservesPitch=false;
-
     micLocked=true;if(window.recognition)try{window.recognition.stop();}catch{}
-
-    audio.addEventListener("play",async()=>{
-      await setAnim(pick(talkPool),{minHoldMs:0,blendMs:250});
-      const loop=()=>{
-        if(state!=="talking"||audio.paused||audio.ended)return;
-        setTimeout(()=>{if(state==="talking"&&!audio.ended){
-          setAnim(pick(talkPool),{minHoldMs:0,blendMs:200});loop();
-        }},2e3+Math.random()*500);
-      };
-      loop();startAmplitudeDriveFor(audio);
-    },{once:true});
-
+    audio.addEventListener("play",async()=>{await setAnim(pick(talkPool),{minHoldMs:0,blendMs:200});startAmplitudeDriveFor(audio);});
     await audio.play().catch(console.warn);
     audio.onended=async()=>{
-      stopAmplitudeDrive();URL.revokeObjectURL(url);
-      state="idle";setStatus("👂 Listening...");
-      await setAnim(pick(idleVariety),{minHoldMs:600,blendMs:400});
-      micLocked=false;if(window.recognition)try{window.recognition.start();}catch{}
-      startMicroIdle();
+      stopAmplitudeDrive();state="idle";setStatus("👂 Listening...");
+      await setAnim(pick(idleVariety),{minHoldMs:600,blendMs:300});
+      micLocked=false;if(window.recognition)try{window.recognition.start();}catch{}startMicroIdle();
     };
-  }catch(e){console.error("Speech error:",e);
-    stopAmplitudeDrive();setStatus("⚠️ Speech error — see console");
-    state="idle";micLocked=false;startMicroIdle();
-  }
+  }catch(e){console.error(e);state="idle";micLocked=false;startMicroIdle();}
 }
 
-// ---------- sleep / idle randomization ----------
+// ---------- sleep logic ----------
 let lastActivity=Date.now();
 function bumpActivity(){lastActivity=Date.now();}
 async function maybeSleep(){
-  if(state!=="idle")return;
-  const roll=Math.random();
-  if(roll<0.25){
-    state="sleeping";stopMicroIdle();
-    setStatus("😴 Nodding off...");
-    await setAnim(ANIM.SLEEP,{minHoldMs:1500,blendMs:500});
+  if(state!=="idle"||sleepLock)return;
+  if(Math.random()<0.25){
+    sleepLock=true;state="sleeping";stopMicroIdle();
+    setStatus("😴 Nodding off...");setCameraOrbit("0deg 90deg 3m");
+    await setAnim(ANIM.SLEEP,{minHoldMs:1800,blendMs:600});
+    sleepLock=false;
   }
 }
-setInterval(async()=>{
-  const idleMs=Date.now()-lastActivity;
-  if(state==="idle"&&idleMs>40000)await maybeSleep();
-},1000);
+setInterval(async()=>{if(state==="idle"&&Date.now()-lastActivity>40000)await maybeSleep();},1000);
+
+// ---------- wake voice + click ----------
 document.addEventListener("pointerdown",()=>{bumpActivity();
   if(state==="sleeping"){state="idle";setStatus("👂 Listening...");
-    setAnim(ANIM.IDLE_MAIN,{minHoldMs:800,blendMs:500});startMicroIdle();}
-},{passive:true});
+    setCameraOrbit("0deg 75deg 1.8m");
+    (async()=>{await setAnim(ANIM.SHRUG,{minHoldMs:500,blendMs:700});
+      await setAnim(ANIM.IDLE_MAIN,{minHoldMs:800,blendMs:600});startMicroIdle();})();}},
+  {passive:true});
 
 // ---------- microphone ----------
 window.SpeechRecognition=window.SpeechRecognition||window.webkitSpeechRecognition;
 if(window.SpeechRecognition){
-  const rec=new SpeechRecognition();
-  rec.continuous=true;rec.interimResults=false;rec.lang="en-US";
+  const rec=new SpeechRecognition();rec.continuous=true;rec.interimResults=false;rec.lang="en-US";
   window.recognition=rec;
   rec.onresult=async e=>{
     const t=e.results[e.results.length-1][0].transcript.trim().toLowerCase();
@@ -298,7 +223,9 @@ if(window.SpeechRecognition){
     if(state==="sleeping"&&/hey\s*bob/.test(t)){
       console.log("👂 Wake phrase detected");
       state="idle";setStatus("👂 Listening...");
-      await setAnim(ANIM.IDLE_MAIN,{minHoldMs:800,blendMs:700});
+      setCameraOrbit("0deg 75deg 1.8m");
+      await setAnim(ANIM.SHRUG,{minHoldMs:500,blendMs:700});
+      await setAnim(ANIM.IDLE_MAIN,{minHoldMs:800,blendMs:600});
       startMicroIdle();return;
     }
     await speakAndAnimate(t);
@@ -319,15 +246,15 @@ async function boot(){
     activeMV.classList.add("active");
     setStatus("Warming up…");await warmup();
     console.log("✅ Warmup complete");
-    await setAnim(ANIM.IDLE_MAIN,{minHoldMs:800,blendMs:400});
+    await setAnim(ANIM.IDLE_MAIN,{minHoldMs:800,blendMs:300});
     state="idle";setStatus("👂 Listening...");
     startMicroIdle();
     document.addEventListener("keydown",e=>{
-      if(e.key.toLowerCase()==="p")
-        speakAndAnimate("Howdy partner! Ready to rustle up some mischief?");
+      if(e.key.toLowerCase()==="p")speakAndAnimate("Howdy partner! Ready to rustle up some mischief?");
     });
     console.log("🎉 Bob ready!");
   }catch(e){console.error("Boot error:",e);setStatus("⚠️ Failed to load Bob");}
 }
+async function warmup(){const w=new Set([ANIM.IDLE_MAIN,ANIM.SHRUG,ANIM.SLEEP,...talkPool]);let d=100;for(const n of w){setTimeout(()=>ensureGlbUrl(n).catch(()=>{}),d);d+=100;}}
 window.addEventListener("DOMContentLoaded",()=>{console.log("📦 DOMContentLoaded — launching boot()");boot();});
 window.Bob={setAnim,speak:speakAndAnimate,state:()=>state};
