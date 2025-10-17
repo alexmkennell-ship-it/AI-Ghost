@@ -162,4 +162,118 @@ async function speakAndAnimate(text) {
       try {
         await audio.play();
       } catch (err) {
-        console.warn
+        console.warn("Autoplay blocked:", err);
+        setStatus("👆 Click to hear Bob...");
+        document.addEventListener(
+          "click",
+          () => {
+            audio.play().catch(console.error);
+            setStatus("💬 Playing response...");
+          },
+          { once: true }
+        );
+      }
+    };
+
+    await playAudio();
+
+    audio.onended = async () => {
+      URL.revokeObjectURL(url);
+      state = "idle";
+      setStatus("👂 Listening...");
+      await setAnim(ANIM.IDLE_MAIN, { minHoldMs: 600 });
+    };
+  } catch (err) {
+    console.error("Speech error:", err);
+    setStatus("⚠️ Speech error — check console");
+    state = "idle";
+  }
+}
+
+function cancelSpeech() {
+  if (abortSpeech) abortSpeech();
+  abortSpeech = null;
+}
+
+// --- Inactivity ---
+let lastActivity = Date.now();
+function bumpActivity() { lastActivity = Date.now(); }
+
+setInterval(async () => {
+  const idleMs = Date.now() - lastActivity;
+  if (state === "idle" && idleMs > 45000) {
+    state = "sleeping";
+    setStatus("😴 Sleeping...");
+    await setAnim(ANIM.SLEEP, { minHoldMs: 1500 });
+  }
+}, 1000);
+
+document.addEventListener("pointerdown", () => {
+  bumpActivity();
+  if (state === "sleeping") {
+    state = "idle";
+    setStatus("👂 Listening...");
+    setAnim(ANIM.IDLE_MAIN, { minHoldMs: 800 });
+  }
+}, { passive: true });
+
+// --- Microphone listener (SpeechRecognition) ---
+window.SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+if (window.SpeechRecognition) {
+  const recognition = new SpeechRecognition();
+  recognition.continuous = true;
+  recognition.interimResults = false;
+  recognition.lang = "en-US";
+
+  recognition.onresult = async (event) => {
+    const transcript = event.results[event.results.length - 1][0].transcript.trim();
+    if (transcript.length > 0) {
+      console.log("🎤 Heard:", transcript);
+      await speakAndAnimate(transcript);
+    }
+  };
+
+  recognition.onerror = (e) => console.warn("Speech recognition error:", e.error);
+  recognition.onend = () => {
+    if (state === "idle") recognition.start();
+  };
+
+  window.addEventListener("click", () => {
+    try {
+      recognition.start();
+      setStatus("👂 Listening (mic on)...");
+    } catch (err) {
+      console.warn("Mic start error:", err);
+    }
+  }, { once: true });
+} else {
+  console.warn("SpeechRecognition not supported in this browser.");
+}
+
+// --- Boot ---
+async function boot() {
+  statusEl = document.getElementById("status");
+  mvA = document.getElementById("mvA");
+  mvB = document.getElementById("mvB");
+  activeMV = mvA;
+  inactiveMV = mvB;
+  activeMV.classList.add("active");
+
+  setStatus("Warming up…");
+  await warmup();
+  await setAnim(ANIM.IDLE_MAIN, { minHoldMs: 800 });
+  state = "idle";
+  setStatus("👂 Listening...");
+  scheduleIdleSwap();
+
+  document.addEventListener("keydown", (e) => {
+    if (e.key.toLowerCase() === "p") {
+      speakAndAnimate("Well now, partner—I'm a real pun slinger!");
+    }
+  });
+}
+
+window.addEventListener("DOMContentLoaded", boot);
+
+window.Bob = { setAnim, speak: speakAndAnimate, state: () => state };
