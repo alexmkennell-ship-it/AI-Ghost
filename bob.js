@@ -123,7 +123,7 @@ async function speakAndAnimate(text) {
     abortSpeech = () => ac.abort();
 
     // Force fetch as binary audio data
-    const resp = await fetch(`${WORKER_URL}/talk`, {
+    const resp = await fetch(`${WORKER_URL}/talk/`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text }),
