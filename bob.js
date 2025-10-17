@@ -192,7 +192,7 @@ window.addEventListener("DOMContentLoaded", () => {
     mv.setAttribute("camera-orbit", out);
     rememberOrbit(out);
     if (k < 1) requestAnimationFrame(step);
-  };
+  
   requestAnimationFrame(step);
 }
 
