@@ -164,21 +164,22 @@ function waitForModelLoad(timeout = 5000) {
 async function setAnim(name, holdMs = 0) {
   if (!bob) return;
 
-  let nextUrl = glbCache.get(name) || null;
-  if (!nextUrl) {
+  let nextSrc = glbCache.get(name) || null;
+  if (!nextSrc) {
     try {
-      nextUrl = await ensureGlbUrl(name);
+      nextSrc = await ensureGlbUrl(name);
     } catch (err) {
       console.warn(`⚠️ Falling back to direct load for ${name}.`, err);
-      nextUrl = `${MODEL_BASE}${name}.glb`;
+      nextSrc = `${MODEL_BASE}${name}.glb`;
     }
   }
 
+  const nextSrc = `${MODEL_BASE}${name}.glb`;
   const currentSrc = bob.getAttribute("src");
-  const needsSrcSwap = currentSrc !== nextUrl;
+  const needsSrcSwap = currentSrc !== nextSrc;
 
   if (needsSrcSwap) {
-    bob.setAttribute("src", nextUrl);
+    bob.setAttribute("src", nextSrc);
     console.log("🎞️ Animation:", name);
     await waitForModelLoad();
 
@@ -286,6 +287,9 @@ async function handleUserInput(userInput) {
 
     const kickOffTalking = () => {
       cleanupPlaybackStarters();
+    const onPlaybackStart = () => {
+      audio.removeEventListener("playing", onPlaybackStart);
+      audio.removeEventListener("play", onPlaybackStart);
       state = "talking";
       startTalkingLoop();
     };
@@ -310,6 +314,10 @@ async function handleUserInput(userInput) {
 
     audio.onended = async () => {
       cleanupPlaybackStarters();
+    audio.addEventListener("playing", onPlaybackStart);
+    audio.addEventListener("play", onPlaybackStart);
+
+    audio.onended = async () => {
       await stopTalkingLoop();
       await setAnim(ANIM.IDLE_MAIN);
       state = "idle";
@@ -340,6 +348,7 @@ async function runTalkingLoop() {
 
     if (!talkLoopActive || state !== "talking") break;
     await sleep(rand(1500, 2400));
+    await sleep(rand(1200, 2000));
   }
 }
 
