@@ -160,8 +160,8 @@ async function handleUserInput(userInput) {
 
     try {
       await audio.play();
-    } catch {
-      console.warn("⚠️ Autoplay blocked, waiting for click.");
+    } catch (err) {
+      console.warn("⚠️ Autoplay blocked, waiting for click.", err);
       setStatus("👆 Click anywhere to let Bob speak.");
       document.body.addEventListener("click", () => audio.play(), { once: true });
     }
@@ -214,6 +214,10 @@ window.addEventListener("DOMContentLoaded", () => {
   const activate = async () => {
     if (hasStarted) return;
     console.log("🖱️ Activation click detected");
+    try {
+      await new Audio().play().catch(() => {});
+    } catch (err) {
+      console.warn("⚠️ Unable to unlock audio on activation.", err);
   const overlay = document.getElementById("wakeOverlay");
   const handleWakeClick = async () => {
     console.log("🖱️ Wake click detected");
@@ -242,6 +246,15 @@ window.addEventListener("DOMContentLoaded", () => {
     if (!overlay && !hasStarted) {
       handleWakeClick();
     }
+    startListening();
+  };
+
+  document.addEventListener("click", activate, { once: true });
+
+  setStatus("👆 Click anywhere to start.");
+
+  bob.addEventListener("load", () => {
+    console.log("✅ Bob ready!");
   });
 
   document.addEventListener("click", bumpActivity, { passive: true });
