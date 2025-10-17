@@ -121,7 +121,7 @@ async function speakAndAnimate(userText) {
     const replyText = data.reply || "Well shoot, reckon I'm tongue-tied, partner.";
     console.log("🤖 Bob says:", replyText);
 
-    // Step 2 — get TTS audio
+    // Step 2 — convert reply to audio
     const ac = new AbortController();
     abortSpeech = () => ac.abort();
 
