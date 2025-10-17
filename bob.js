@@ -1,5 +1,5 @@
 // bob.js — Voice-Activated Bob the Skeleton 🤠💀
-// Version 3 — Realistic TTS + Lip Sync + Worker Proxy
+// Version 4 — Real OpenAI TTS (raspy cowboy voice) + Lip Sync
 
 const bob = document.getElementById("bob");
 if (!bob) console.warn("⚠️ No <model-viewer id='bob'> found in DOM.");
@@ -38,7 +38,7 @@ recognition.onresult = async (event) => {
   if (transcript.length > 0) await talkToBob(transcript);
 };
 
-// --- 🧠 Talk to AI Worker + Handle TTS ---
+// --- 🧠 Talk to AI Worker + Handle OpenAI TTS ---
 async function talkToBob(userInput) {
   try {
     isTalking = true;
@@ -46,36 +46,37 @@ async function talkToBob(userInput) {
 
     console.log("Talking to Bob:", userInput);
 
-    // Step 1 — Call AI Worker
-    const response = await fetch("https://ghostaiv1.alexmkennell.workers.dev/", {
+    // Step 1 — Chat Completion via your Worker
+    const chatResponse = await fetch("https://ghostaiv1.alexmkennell.workers.dev/", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ prompt: userInput })
     });
 
-    if (!response.ok) throw new Error(await response.text());
-    const data = await response.json();
+    if (!chatResponse.ok) throw new Error(await chatResponse.text());
+    const data = await chatResponse.json();
     const reply = data.reply || "(eerie silence...)";
     console.log("💬 Bob says:", reply);
 
-    // Step 2 — Call Worker for TTS (using your existing API key securely)
+    // Step 2 — Real OpenAI TTS from your Worker
     const ttsResponse = await fetch("https://ghostaiv1.alexmkennell.workers.dev/tts", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         text: reply,
-        voice: "verse", // raspy cowboy voice
+        voice: "onyx", // <- raspy cowboy
         model: "gpt-4o-mini-tts"
       })
     });
 
-    if (!ttsResponse.ok) throw new Error("TTS request failed.");
+    if (!ttsResponse.ok) throw new Error(`TTS failed: ${ttsResponse.statusText}`);
+
     const audioBlob = await ttsResponse.blob();
     const audioUrl = URL.createObjectURL(audioBlob);
     const audio = new Audio(audioUrl);
 
     // Step 3 — Lip Sync During Audio Playback
-    audio.onplay = () => startLipSync();
+    audio.onplay = () => startLipSync(audio);
     audio.onended = () => stopLipSync();
     audio.play();
 
@@ -88,14 +89,22 @@ async function talkToBob(userInput) {
 }
 
 // --- 👄 Lip Sync Animation ---
-function startLipSync() {
+function startLipSync(audio) {
   if (!bob) return;
   console.log("👄 Lip sync start");
+
+  const avgBeat = 150; // shorter = faster mouth movement
   let open = false;
+
   bob._lipSyncInterval = setInterval(() => {
-    bob.animationName = open ? "Animation_Talk_withSkin" : "Animation_Long_Breathe_and_Look_Around_withSkin";
+    bob.animationName = open
+      ? "Animation_Talk_withSkin"
+      : "Animation_Long_Breathe_and_Look_Around_withSkin";
     open = !open;
-  }, 200);
+  }, avgBeat);
+
+  // Stop sync when audio ends (safety)
+  audio.addEventListener("ended", stopLipSync);
 }
 
 function stopLipSync() {
@@ -122,7 +131,7 @@ window.addEventListener("DOMContentLoaded", () => {
   try {
     recognition.start();
     console.log("Bob’s ready for duty!");
-    console.log("Auto voice recognition active.");
+    console.log("Auto voice recognition active (raspy voice mode).");
   } catch (err) {
     console.error("Speech recognition start failed:", err);
   }
