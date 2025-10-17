@@ -193,22 +193,6 @@ async function enterSleep() {
   await setAnim(ANIM.SLEEP);
 }
 
-// Wake up sequence (fixed)
-async function wakeSequence(greet = true) {
-  console.log("🌅 Bob waking up...");
-  state = "waking";
-  setStatus("🌅 Bob’s wakin’ up...");
-  await setAnim(ANIM.WAKE, 2500);
-  await setAnim(ANIM.STAND, 1500);
-  if (greet) await setAnim(ANIM.WAVE, 1200);
-  await setAnim(ANIM.IDLE_MAIN); // setAnim already waits for the model to load
-  state = "idle";
-  bumpActivity();
-  setStatus("👂 Listening...");
-  setAnim(ANIM.IDLE_MAIN);
-  scheduleIdleSwap();
-  startVoiceRecognition();
-}
 
 // Boot sequence (overlay version)
 window.addEventListener("DOMContentLoaded", () => {
