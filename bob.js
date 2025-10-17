@@ -174,6 +174,7 @@ async function setAnim(name, holdMs = 0) {
     }
   }
 
+  const nextSrc = `${MODEL_BASE}${name}.glb`;
   const currentSrc = bob.getAttribute("src");
   const needsSrcSwap = currentSrc !== nextSrc;
 
@@ -286,6 +287,9 @@ async function handleUserInput(userInput) {
 
     const kickOffTalking = () => {
       cleanupPlaybackStarters();
+    const onPlaybackStart = () => {
+      audio.removeEventListener("playing", onPlaybackStart);
+      audio.removeEventListener("play", onPlaybackStart);
       state = "talking";
       startTalkingLoop();
     };
@@ -310,6 +314,10 @@ async function handleUserInput(userInput) {
 
     audio.onended = async () => {
       cleanupPlaybackStarters();
+    audio.addEventListener("playing", onPlaybackStart);
+    audio.addEventListener("play", onPlaybackStart);
+
+    audio.onended = async () => {
       await stopTalkingLoop();
       await setAnim(ANIM.IDLE_MAIN);
       state = "idle";
@@ -340,6 +348,7 @@ async function runTalkingLoop() {
 
     if (!talkLoopActive || state !== "talking") break;
     await sleep(rand(1500, 2400));
+    await sleep(rand(1200, 2000));
   }
 }
 
