@@ -163,7 +163,8 @@ async function speakAndAnimate(text) {
   }
 }
 
-function cancelSpeech() {
+function cancelSpeech() 
+{
   if (abortSpeech) abortSpeech();
   abortSpeech = null;
 }
