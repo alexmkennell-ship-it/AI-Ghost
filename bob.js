@@ -1,12 +1,12 @@
-// bob.js — smooth crossfade + live microphone + reliable playback
+// bob.js — smooth crossfade + mic listening + reliable playback
 //
-// Full working version with active listening, smooth animation transitions,
-// and hardened audio playback to prevent silent or blocked responses.
+// Clean, stable build — full replacement for Bob the Bone Cowboy.
 //
+
 const WORKER_URL = "https://ghostaiv1.alexmkennell.workers.dev";
 const MODEL_BASE = "https://pub-30bcc0b2a7044074a19efdef19f69857.r2.dev/models/";
 
-// Animation names
+// --- Animation names ---
 const ANIM = {
   IDLE_MAIN: "Animation_Long_Breathe_and_Look_Around_withSkin",
   SLEEP: "Animation_Sleep_Normally_withSkin",
@@ -16,35 +16,31 @@ const ANIM = {
   TALK_2: "Animation_Talk_with_Hands_Open_withSkin",
   TALK_3: "Animation_Talk_with_Left_Hand_Raised_withSkin",
   TALK_4: "Animation_Talk_with_Right_Hand_Open_withSkin",
-  YAWN: "Animation_Yawn_withSkin",
 };
 
 const idlePool = [ANIM.IDLE_MAIN];
 const talkPool = [ANIM.TALK_1, ANIM.TALK_2, ANIM.TALK_3, ANIM.TALK_4];
 
-// DOM
+// --- Globals ---
 let mvA, mvB, activeMV, inactiveMV, statusEl;
 let currentAnim = null;
 let state = "boot"; // boot | idle | talking | sleeping
-
-// Cache of preloaded GLBs
 const glbCache = new Map();
 const inflight = new Map();
 
-function setStatus(msg) {
+// --- Helpers ---
+const setStatus = (msg) => {
   statusEl ??= document.getElementById("status");
   if (statusEl) statusEl.textContent = msg;
-}
-
-function sleep(ms) {
-  return new Promise((r) => setTimeout(r, ms));
-}
-
-async function doubleRaf() {
+};
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+const doubleRaf = async () => {
   await new Promise((r) => requestAnimationFrame(r));
   await new Promise((r) => requestAnimationFrame(r));
-}
+};
 
+// --- GLB loader ---
 async function ensureGlbUrl(name) {
   if (glbCache.has(name)) return glbCache.get(name);
   if (inflight.has(name)) return inflight.get(name);
@@ -66,20 +62,11 @@ async function ensureGlbUrl(name) {
   }
 }
 
-function pick(arr) {
-  return arr[Math.floor(Math.random() * arr.length)];
-}
-
+// --- Model loading + crossfade ---
 async function waitForModelLoaded(mv) {
-  if (mv?.model) {
-    await doubleRaf();
-    return;
-  }
+  if (mv?.model) { await doubleRaf(); return; }
   await new Promise((resolve) => {
-    const onLoad = () => {
-      mv.removeEventListener("load", onLoad);
-      resolve();
-    };
+    const onLoad = () => { mv.removeEventListener("load", onLoad); resolve(); };
     mv.addEventListener("load", onLoad, { once: true });
   });
   await doubleRaf();
@@ -87,47 +74,41 @@ async function waitForModelLoaded(mv) {
 
 async function setAnim(name, { minHoldMs = 800 } = {}) {
   if (!inactiveMV || !activeMV) return;
-
   const url = await ensureGlbUrl(name);
 
   inactiveMV.setAttribute("src", url);
   await waitForModelLoaded(inactiveMV);
 
-  try {
-    inactiveMV.currentTime = 0;
-    await inactiveMV.play();
-  } catch {}
+  try { inactiveMV.currentTime = 0; await inactiveMV.play(); } catch {}
 
   inactiveMV.classList.add("active");
   activeMV.classList.remove("active");
-
   [activeMV, inactiveMV] = [inactiveMV, activeMV];
   currentAnim = name;
-
   if (minHoldMs > 0) await sleep(minHoldMs);
 }
 
+// --- Preload important animations ---
 async function warmup() {
   const warm = new Set([ANIM.IDLE_MAIN, ANIM.SHRUG, ANIM.SLEEP, ...talkPool]);
   let delay = 100;
   for (const name of warm) {
-    setTimeout(() => { ensureGlbUrl(name).catch(() => {}); }, delay);
+    setTimeout(() => ensureGlbUrl(name).catch(() => {}), delay);
     delay += 100;
   }
 }
 
+// --- Idle refresh timer ---
 let idleSwapTimer = null;
 function scheduleIdleSwap() {
   clearTimeout(idleSwapTimer);
   idleSwapTimer = setTimeout(async () => {
-    if (state === "idle") {
-      await setAnim(ANIM.IDLE_MAIN, { minHoldMs: 1000 });
-    }
+    if (state === "idle") await setAnim(ANIM.IDLE_MAIN, { minHoldMs: 1000 });
     scheduleIdleSwap();
   }, 12000 + Math.random() * 5000);
 }
 
-// --- Voice & talking ---
+// --- Talking / TTS playback ---
 let abortSpeech = null;
 async function speakAndAnimate(text) {
   if (!text) return;
@@ -141,7 +122,6 @@ async function speakAndAnimate(text) {
     const ac = new AbortController();
     abortSpeech = () => ac.abort();
 
-    // Fetch TTS audio from worker
     const resp = await fetch(`${WORKER_URL}/talk`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -152,26 +132,19 @@ async function speakAndAnimate(text) {
     if (!resp.ok) throw new Error(`TTS failed: ${resp.status}`);
     const blob = await resp.blob();
 
-    // Convert blob -> playable audio URL
     const url = URL.createObjectURL(blob);
     const audio = new Audio(url);
     audio.playbackRate = 1.0;
 
-    // Safely play with click fallback
     const playAudio = async () => {
-      try {
-        await audio.play();
-      } catch (err) {
+      try { await audio.play(); }
+      catch (err) {
         console.warn("Autoplay blocked:", err);
         setStatus("👆 Click to hear Bob...");
-        document.addEventListener(
-          "click",
-          () => {
-            audio.play().catch(console.error);
-            setStatus("💬 Playing response...");
-          },
-          { once: true }
-        );
+        document.addEventListener("click", () => {
+          audio.play().catch(console.error);
+          setStatus("💬 Playing response...");
+        }, { once: true });
       }
     };
 
@@ -185,7 +158,7 @@ async function speakAndAnimate(text) {
     };
   } catch (err) {
     console.error("Speech error:", err);
-    setStatus("⚠️ Speech error — check console");
+    setStatus("⚠️ Speech error — see console");
     state = "idle";
   }
 }
@@ -195,7 +168,7 @@ function cancelSpeech() {
   abortSpeech = null;
 }
 
-// --- Inactivity ---
+// --- Sleep / wake ---
 let lastActivity = Date.now();
 function bumpActivity() { lastActivity = Date.now(); }
 
@@ -217,9 +190,8 @@ document.addEventListener("pointerdown", () => {
   }
 }, { passive: true });
 
-// --- Microphone listener (SpeechRecognition) ---
+// --- Microphone (SpeechRecognition) ---
 window.SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-
 if (window.SpeechRecognition) {
   const recognition = new SpeechRecognition();
   recognition.continuous = true;
@@ -235,9 +207,7 @@ if (window.SpeechRecognition) {
   };
 
   recognition.onerror = (e) => console.warn("Speech recognition error:", e.error);
-  recognition.onend = () => {
-    if (state === "idle") recognition.start();
-  };
+  recognition.onend = () => { if (state === "idle") recognition.start(); };
 
   window.addEventListener("click", () => {
     try {
@@ -251,29 +221,54 @@ if (window.SpeechRecognition) {
   console.warn("SpeechRecognition not supported in this browser.");
 }
 
-// --- Boot ---
+// --- Boot sequence ---
 async function boot() {
-  statusEl = document.getElementById("status");
-  mvA = document.getElementById("mvA");
-  mvB = document.getElementById("mvB");
-  activeMV = mvA;
-  inactiveMV = mvB;
-  activeMV.classList.add("active");
+  try {
+    console.log("🟢 Booting Bob...");
+    statusEl = document.getElementById("status");
+    mvA = document.getElementById("mvA");
+    mvB = document.getElementById("mvB");
 
-  setStatus("Warming up…");
-  await warmup();
-  await setAnim(ANIM.IDLE_MAIN, { minHoldMs: 800 });
-  state = "idle";
-  setStatus("👂 Listening...");
-  scheduleIdleSwap();
-
-  document.addEventListener("keydown", (e) => {
-    if (e.key.toLowerCase() === "p") {
-      speakAndAnimate("Well now, partner—I'm a real pun slinger!");
+    if (!mvA || !mvB) {
+      setStatus("Error: model-viewer not found");
+      console.error("❌ Missing model-viewer elements!");
+      return;
     }
-  });
+
+    activeMV = mvA;
+    inactiveMV = mvB;
+    activeMV.classList.add("active");
+
+    setStatus("Warming up…");
+    await warmup();
+
+    console.log("✅ Warmup complete");
+    await setAnim(ANIM.IDLE_MAIN, { minHoldMs: 800 });
+
+    state = "idle";
+    setStatus("👂 Listening...");
+    scheduleIdleSwap();
+
+    document.addEventListener("keydown", (e) => {
+      if (e.key.toLowerCase() === "p") {
+        speakAndAnimate("Well now, partner—I'm a real pun slinger!");
+      }
+    });
+
+    console.log("🎉 Bob ready!");
+  } catch (err) {
+    console.error("Boot error:", err);
+    setStatus("⚠️ Failed to load Bob");
+  }
 }
 
-window.addEventListener("DOMContentLoaded", boot);
+window.addEventListener("DOMContentLoaded", () => {
+  console.log("📦 DOMContentLoaded — launching boot()");
+  boot();
+});
 
-window.Bob = { setAnim, speak: speakAndAnimate, state: () => state };
+window.Bob = {
+  setAnim,
+  speak: speakAndAnimate,
+  state: () => state,
+};
