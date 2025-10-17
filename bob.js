@@ -9,9 +9,6 @@ const MODEL_BASE = "https://pub-30bcc0b2a7044074a19efdef19f69857.r2.dev/models/"
 const ANIM = {
   IDLE_MAIN: "Animation_Long_Breathe_and_Look_Around_withSkin",
   SLEEP: "Animation_Sleep_Normally_withSkin",
-  WAKE: "Animation_Wake_Up_and_Look_Up_withSkin",
-  STAND: "Animation_Stand_Up1_withSkin",
-  WAVE: "Animation_Big_Wave_Hello_withSkin",
   ANGRY: "Animation_Angry_Ground_Stomp_withSkin",
   SHRUG: "Animation_Shrug_withSkin",
   TALK_1: "Animation_Talk_Passionately_withSkin",
@@ -31,6 +28,7 @@ let state = "idle";
 let lastActivity = Date.now();
 let talkAnimTimer = null;
 let sleepTimer = null;
+let hasStarted = false;
 let idleTimer = null;
 
 const rand = (min, max) => Math.floor(min + Math.random() * (max - min + 1));
@@ -40,9 +38,40 @@ function setStatus(msg) { if (statusEl) statusEl.textContent = msg; }
 function bumpActivity() { lastActivity = Date.now(); }
 
 // Wait until <model-viewer> finishes loading the new GLB
-function waitForModelLoad() {
+function waitForModelLoad(timeout = 5000) {
   return new Promise((resolve) => {
-    bob.addEventListener("load", resolve, { once: true });
+    if (!bob) {
+      resolve();
+      return;
+    }
+
+    let settled = false;
+    const cleanup = () => {
+      if (settled) return;
+      settled = true;
+      bob.removeEventListener("load", onLoad);
+      bob.removeEventListener("error", onError);
+      clearTimeout(timer);
+      resolve();
+    };
+
+    const onLoad = () => {
+      console.log("✅ Model loaded");
+      cleanup();
+    };
+
+    const onError = (event) => {
+      console.warn("⚠️ Model load error", event);
+      cleanup();
+    };
+
+    const timer = setTimeout(() => {
+      console.warn("⏱️ Model load timeout — continuing");
+      cleanup();
+    }, timeout);
+
+    bob.addEventListener("load", onLoad, { once: true });
+    bob.addEventListener("error", onError, { once: true });
   });
 }
 
@@ -164,19 +193,16 @@ async function enterSleep() {
   await setAnim(ANIM.SLEEP);
 }
 
-// Wake up sequence (fixed)
-async function wakeSequence(greet = true) {
-  console.log("🌅 Bob waking up...");
-  state = "waking";
-  setStatus("🌅 Bob’s wakin’ up...");
-  await setAnim(ANIM.WAKE, 2500);
-  await setAnim(ANIM.STAND, 1500);
-  if (greet) await setAnim(ANIM.WAVE, 1200);
-  await setAnim(ANIM.IDLE_MAIN);
-  await waitForModelLoad(); // ✅ ensures model is loaded before mic starts
+// Start listening immediately after the user clicks
+function startListening() {
+  if (hasStarted) return;
+  hasStarted = true;
+
+  console.log("🎧 Bob is ready to listen!");
   state = "idle";
-  setStatus("🎙 Say somethin’, partner…");
   bumpActivity();
+  setStatus("👂 Listening...");
+  setAnim(ANIM.IDLE_MAIN);
   scheduleIdleSwap();
   startVoiceRecognition();
 }
@@ -185,22 +211,27 @@ async function wakeSequence(greet = true) {
 window.addEventListener("DOMContentLoaded", () => {
   if (!bob) return;
 
-  bob.addEventListener("load", async () => {
-    console.log("✅ Bob ready!");
-    setStatus("👆 Click to wake Bob up.");
+  const overlay = document.getElementById("wakeOverlay");
+  const handleWakeClick = async () => {
+    console.log("🖱️ Wake click detected");
+    overlay?.remove();
+    try {
+      await new Audio().play().catch(() => {});
+    } catch {}
+    startListening();
+  };
 
-    const overlay = document.getElementById("wakeOverlay");
-    if (overlay) {
-      overlay.addEventListener(
-        "click",
-        async () => {
-          console.log("🖱️ Wake click detected");
-          overlay.remove(); // remove overlay so model-viewer works again
-          try { await new Audio().play().catch(() => {}); } catch {}
-          await wakeSequence(true);
-        },
-        { once: true }
-      );
+  if (overlay) {
+    overlay.addEventListener("click", handleWakeClick, { once: true });
+  }
+
+  setStatus("👆 Click to chat with Bob.");
+
+  bob.addEventListener("load", () => {
+    console.log("✅ Bob ready!");
+    // If the overlay never existed, start listening after the model loads.
+    if (!overlay && !hasStarted) {
+      handleWakeClick();
     }
   });
 
