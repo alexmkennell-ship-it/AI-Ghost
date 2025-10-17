@@ -17,8 +17,8 @@ const ANIM = {
   SHRUG: "Animation_Shrug_withSkin",
   TALK_1: "Animation_Talk_Passionately_withSkin",
   TALK_2: "Animation_Talk_with_Hands_Open_withSkin",
-  TALK_3: "Animation_Explain_withSkin",
-  TALK_4: "Animation_Excited_withSkin",
+    TALK_3: "Animation_Talk_with_Left_Hand_Raised_withSkin",
+  TALK_4: "Animation_Talk_with_Right_Hand_Open_withSkin",
   YAWN: "Animation_Yawn_withSkin",
 };
 
