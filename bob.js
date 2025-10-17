@@ -1,7 +1,5 @@
-// bob.js — smooth crossfade + mic listening + reliable playback
-//
-// Clean, stable build — full replacement for Bob the Bone Cowboy.
-//
+// bob.js — final version
+// Smooth crossfade + mic listening + correct /tts endpoint
 
 const WORKER_URL = "https://ghostaiv1.alexmkennell.workers.dev";
 const MODEL_BASE = "https://pub-30bcc0b2a7044074a19efdef19f69857.r2.dev/models/";
@@ -16,19 +14,18 @@ const ANIM = {
   TALK_2: "Animation_Talk_with_Hands_Open_withSkin",
   TALK_3: "Animation_Talk_with_Left_Hand_Raised_withSkin",
   TALK_4: "Animation_Talk_with_Right_Hand_Open_withSkin",
+  YAWN: "Animation_Yawn_withSkin",
 };
 
 const idlePool = [ANIM.IDLE_MAIN];
 const talkPool = [ANIM.TALK_1, ANIM.TALK_2, ANIM.TALK_3, ANIM.TALK_4];
 
-// --- Globals ---
 let mvA, mvB, activeMV, inactiveMV, statusEl;
 let currentAnim = null;
-let state = "boot"; // boot | idle | talking | sleeping
+let state = "boot";
 const glbCache = new Map();
 const inflight = new Map();
 
-// --- Helpers ---
 const setStatus = (msg) => {
   statusEl ??= document.getElementById("status");
   if (statusEl) statusEl.textContent = msg;
@@ -75,12 +72,9 @@ async function waitForModelLoaded(mv) {
 async function setAnim(name, { minHoldMs = 800 } = {}) {
   if (!inactiveMV || !activeMV) return;
   const url = await ensureGlbUrl(name);
-
   inactiveMV.setAttribute("src", url);
   await waitForModelLoaded(inactiveMV);
-
   try { inactiveMV.currentTime = 0; await inactiveMV.play(); } catch {}
-
   inactiveMV.classList.add("active");
   activeMV.classList.remove("active");
   [activeMV, inactiveMV] = [inactiveMV, activeMV];
@@ -88,7 +82,7 @@ async function setAnim(name, { minHoldMs = 800 } = {}) {
   if (minHoldMs > 0) await sleep(minHoldMs);
 }
 
-// --- Preload important animations ---
+// --- Warmup ---
 async function warmup() {
   const warm = new Set([ANIM.IDLE_MAIN, ANIM.SHRUG, ANIM.SLEEP, ...talkPool]);
   let delay = 100;
@@ -98,7 +92,7 @@ async function warmup() {
   }
 }
 
-// --- Idle refresh timer ---
+// --- Idle refresh ---
 let idleSwapTimer = null;
 function scheduleIdleSwap() {
   clearTimeout(idleSwapTimer);
@@ -108,7 +102,7 @@ function scheduleIdleSwap() {
   }, 12000 + Math.random() * 5000);
 }
 
-// --- Voice & talking ---
+// --- Speech handling ---
 let abortSpeech = null;
 async function speakAndAnimate(text) {
   if (!text) return;
@@ -122,19 +116,23 @@ async function speakAndAnimate(text) {
     const ac = new AbortController();
     abortSpeech = () => ac.abort();
 
-    // Force fetch as binary audio data
-    const resp = await fetch(`${WORKER_URL}/talk/`, {
+    console.log("🎯 Fetching TTS from:", `${WORKER_URL}/tts`);
+    const resp = await fetch(`${WORKER_URL}/tts`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text }),
       signal: ac.signal,
     });
 
-    // ✅ Force browser to treat as audio regardless of reported content-type
+    // Handle response as binary
     const arrayBuffer = await resp.arrayBuffer();
-    const blob = new Blob([arrayBuffer], { type: "audio/mpeg" });
+    if (arrayBuffer.byteLength < 1000) {
+      console.warn("⚠️ Worker returned short or invalid audio response.");
+      setStatus("⚠️ Invalid audio response");
+      return;
+    }
 
-    // ✅ Convert blob to playable URL
+    const blob = new Blob([arrayBuffer], { type: "audio/mpeg" });
     const url = URL.createObjectURL(blob);
     const audio = new Audio(url);
     audio.playbackRate = 1.0;
@@ -171,13 +169,7 @@ async function speakAndAnimate(text) {
   }
 }
 
-function cancelSpeech() 
-{
-  if (abortSpeech) abortSpeech();
-  abortSpeech = null;
-}
-
-// --- Sleep / wake ---
+// --- Inactivity ---
 let lastActivity = Date.now();
 function bumpActivity() { lastActivity = Date.now(); }
 
@@ -199,7 +191,7 @@ document.addEventListener("pointerdown", () => {
   }
 }, { passive: true });
 
-// --- Microphone (SpeechRecognition) ---
+// --- Microphone ---
 window.SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 if (window.SpeechRecognition) {
   const recognition = new SpeechRecognition();
@@ -250,7 +242,6 @@ async function boot() {
 
     setStatus("Warming up…");
     await warmup();
-
     console.log("✅ Warmup complete");
     await setAnim(ANIM.IDLE_MAIN, { minHoldMs: 800 });
 
@@ -263,6 +254,16 @@ async function boot() {
         speakAndAnimate("Well now, partner—I'm a real pun slinger!");
       }
     });
+
+    try {
+      if (window.SpeechRecognition && typeof recognition !== "undefined") {
+        recognition.start();
+        setStatus("👂 Listening (mic on)...");
+        console.log("🎙️ Mic started automatically after boot.");
+      }
+    } catch (err) {
+      console.warn("Mic auto-start failed:", err);
+    }
 
     console.log("🎉 Bob ready!");
   } catch (err) {
