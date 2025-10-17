@@ -26,16 +26,24 @@ const talkPool = [ANIM.TALK_1, ANIM.TALK_2, ANIM.TALK_3, ANIM.TALK_4, ANIM.AGREE
 
 let state = "idle";
 let lastActivity = Date.now();
-let talkAnimTimer = null;
 let sleepTimer = null;
 let hasStarted = false;
 let idleTimer = null;
+let idleSwapInFlight = false;
 
 const rand = (min, max) => Math.floor(min + Math.random() * (max - min + 1));
 const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
 const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
 function setStatus(msg) { if (statusEl) statusEl.textContent = msg; }
 function bumpActivity() { lastActivity = Date.now(); }
+
+let currentAnim = null;
+
+function pickDistinct(pool) {
+  if (!currentAnim) return pick(pool);
+  const options = pool.filter((name) => name !== currentAnim);
+  return pick(options.length ? options : pool);
+}
 
 // Wait until <model-viewer> finishes loading the new GLB
 function waitForModelLoad(timeout = 5000) {
@@ -99,6 +107,8 @@ async function setAnim(name, holdMs = 0) {
     console.warn("⚠️ Unable to force animation playback.", err);
   }
 
+  currentAnim = name;
+
   if (holdMs > 0) await sleep(holdMs);
 }
 
@@ -106,9 +116,14 @@ async function setAnim(name, holdMs = 0) {
 function scheduleIdleSwap() {
   clearInterval(idleTimer);
   idleTimer = setInterval(() => {
-    if (state !== "idle") return;
-    const next = pick(idlePool);
-    setAnim(next);
+    if (state !== "idle" || idleSwapInFlight) return;
+    const next = pickDistinct(idlePool);
+    idleSwapInFlight = true;
+    setAnim(next)
+      .catch((err) => console.warn("⚠️ Idle swap failed.", err))
+      .finally(() => {
+        idleSwapInFlight = false;
+      });
   }, rand(40000, 70000));
 }
 
@@ -167,13 +182,21 @@ async function handleUserInput(userInput) {
     const url = URL.createObjectURL(blob);
     const audio = new Audio(url);
 
-    state = "talking";
-    startTalkingLoop();
+    const onPlaybackStart = () => {
+      audio.removeEventListener("playing", onPlaybackStart);
+      audio.removeEventListener("play", onPlaybackStart);
+      state = "talking";
+      startTalkingLoop();
+    };
+
+    audio.addEventListener("playing", onPlaybackStart);
+    audio.addEventListener("play", onPlaybackStart);
 
     audio.onended = async () => {
-      stopTalkingLoop();
+      await stopTalkingLoop();
       await setAnim(ANIM.IDLE_MAIN);
       state = "idle";
+      URL.revokeObjectURL(url);
     };
 
     try {
@@ -190,17 +213,45 @@ async function handleUserInput(userInput) {
 }
 
 // Talking animation loop
-function startTalkingLoop() {
-  clearInterval(talkAnimTimer);
-  talkAnimTimer = setInterval(() => {
-    if (state !== "talking") return;
-    setAnim(pick(talkPool));
-  }, rand(1200, 2000));
+let talkLoopActive = false;
+let talkLoopPromise = null;
+
+async function runTalkingLoop() {
+  while (talkLoopActive && state === "talking") {
+    const next = pickDistinct(talkPool);
+    await setAnim(next);
+
+    if (!talkLoopActive || state !== "talking") break;
+    await sleep(rand(1200, 2000));
+  }
 }
 
-function stopTalkingLoop() {
-  clearInterval(talkAnimTimer);
-  talkAnimTimer = null;
+function startTalkingLoop() {
+  if (talkLoopActive) return talkLoopPromise;
+  talkLoopActive = true;
+
+  talkLoopPromise = (async () => {
+    try {
+      await runTalkingLoop();
+    } finally {
+      talkLoopActive = false;
+    }
+  })();
+
+  return talkLoopPromise;
+}
+
+async function stopTalkingLoop() {
+  if (!talkLoopActive && !talkLoopPromise) return;
+  talkLoopActive = false;
+
+  try {
+    await talkLoopPromise;
+  } catch (err) {
+    console.warn("⚠️ Talking loop ended with an error.", err);
+  } finally {
+    talkLoopPromise = null;
+  }
 }
 
 // Sleep mode
