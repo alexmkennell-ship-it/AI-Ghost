@@ -39,6 +39,83 @@ function bumpActivity() { lastActivity = Date.now(); }
 
 let currentAnim = null;
 
+const glbCache = new Map();
+const glbPreloaders = new Map();
+
+async function ensureGlbUrl(name) {
+  if (glbCache.has(name)) {
+    return glbCache.get(name);
+  }
+
+  if (glbPreloaders.has(name)) {
+    return glbPreloaders.get(name);
+  }
+
+  const loader = (async () => {
+    const response = await fetch(`${MODEL_BASE}${name}.glb`);
+    if (!response.ok) {
+      throw new Error(`Failed to preload ${name}: ${response.status}`);
+    }
+
+    const blob = await response.blob();
+    const objectUrl = URL.createObjectURL(blob);
+    glbCache.set(name, objectUrl);
+    return objectUrl;
+  })();
+
+  glbPreloaders.set(name, loader);
+
+  try {
+    const url = await loader;
+    return url;
+  } catch (err) {
+    glbCache.delete(name);
+    throw err;
+  } finally {
+    glbPreloaders.delete(name);
+  }
+}
+
+function schedulePreload(name, delay = 0) {
+  if (glbCache.has(name) || glbPreloaders.has(name)) return;
+
+  const start = () => {
+    ensureGlbUrl(name).catch((err) =>
+      console.warn(`⚠️ Failed to preload ${name}.`, err)
+    );
+  };
+
+  const trigger = () => {
+    if (typeof window.requestIdleCallback === "function") {
+      window.requestIdleCallback(() => start(), { timeout: 4000 });
+    } else {
+      start();
+    }
+  };
+
+  if (delay > 0) {
+    setTimeout(trigger, delay);
+  } else {
+    trigger();
+  }
+}
+
+function warmupAnimations() {
+  const essential = new Set([
+    ANIM.IDLE_MAIN,
+    ANIM.SHRUG,
+    ANIM.SLEEP,
+    ...idlePool,
+    ...talkPool,
+  ]);
+
+  let delay = 350;
+  essential.forEach((clip) => {
+    schedulePreload(clip, delay);
+    delay += 200;
+  });
+}
+
 function pickDistinct(pool) {
   if (!currentAnim) return pick(pool);
   const options = pool.filter((name) => name !== currentAnim);
@@ -87,6 +164,16 @@ function waitForModelLoad(timeout = 5000) {
 async function setAnim(name, holdMs = 0) {
   if (!bob) return;
 
+  let nextSrc = glbCache.get(name) || null;
+  if (!nextSrc) {
+    try {
+      nextSrc = await ensureGlbUrl(name);
+    } catch (err) {
+      console.warn(`⚠️ Falling back to direct load for ${name}.`, err);
+      nextSrc = `${MODEL_BASE}${name}.glb`;
+    }
+  }
+
   const nextSrc = `${MODEL_BASE}${name}.glb`;
   const currentSrc = bob.getAttribute("src");
   const needsSrcSwap = currentSrc !== nextSrc;
@@ -95,6 +182,10 @@ async function setAnim(name, holdMs = 0) {
     bob.setAttribute("src", nextSrc);
     console.log("🎞️ Animation:", name);
     await waitForModelLoad();
+
+    await new Promise((resolve) =>
+      requestAnimationFrame(() => requestAnimationFrame(resolve))
+    );
   } else {
     console.log("🎞️ Animation (restart):", name);
   }
@@ -182,6 +273,20 @@ async function handleUserInput(userInput) {
     const url = URL.createObjectURL(blob);
     const audio = new Audio(url);
 
+    let audibleStartTimer = null;
+
+    const cleanupPlaybackStarters = () => {
+      audio.removeEventListener("playing", onPlaybackStart);
+      audio.removeEventListener("play", onPlaybackStart);
+      audio.removeEventListener("timeupdate", onAudibleProgress);
+      if (audibleStartTimer) {
+        clearTimeout(audibleStartTimer);
+        audibleStartTimer = null;
+      }
+    };
+
+    const kickOffTalking = () => {
+      cleanupPlaybackStarters();
     const onPlaybackStart = () => {
       audio.removeEventListener("playing", onPlaybackStart);
       audio.removeEventListener("play", onPlaybackStart);
@@ -189,6 +294,26 @@ async function handleUserInput(userInput) {
       startTalkingLoop();
     };
 
+    const onAudibleProgress = () => {
+      if (audio.currentTime >= 0.12) {
+        kickOffTalking();
+      }
+    };
+
+    const onPlaybackStart = () => {
+      if (audio.currentTime >= 0.12) {
+        kickOffTalking();
+      }
+    };
+
+    audio.addEventListener("playing", onPlaybackStart);
+    audio.addEventListener("play", onPlaybackStart);
+    audio.addEventListener("timeupdate", onAudibleProgress);
+
+    audibleStartTimer = setTimeout(kickOffTalking, 900);
+
+    audio.onended = async () => {
+      cleanupPlaybackStarters();
     audio.addEventListener("playing", onPlaybackStart);
     audio.addEventListener("play", onPlaybackStart);
 
@@ -222,6 +347,7 @@ async function runTalkingLoop() {
     await setAnim(next);
 
     if (!talkLoopActive || state !== "talking") break;
+    await sleep(rand(1500, 2400));
     await sleep(rand(1200, 2000));
   }
 }
@@ -271,7 +397,11 @@ function startListening() {
   state = "idle";
   bumpActivity();
   setStatus("👂 Listening...");
-  setAnim(ANIM.IDLE_MAIN);
+  schedulePreload(ANIM.SHRUG);
+  warmupAnimations();
+  setAnim(ANIM.IDLE_MAIN).catch((err) =>
+    console.warn("⚠️ Failed to start idle animation immediately.", err)
+  );
   scheduleIdleSwap();
   startVoiceRecognition();
 }
@@ -322,4 +452,9 @@ window.addEventListener("DOMContentLoaded", () => {
 
   document.addEventListener("click", bumpActivity, { passive: true });
   document.addEventListener("keydown", bumpActivity, { passive: true });
+});
+
+window.addEventListener("beforeunload", () => {
+  glbCache.forEach((url) => URL.revokeObjectURL(url));
+  glbCache.clear();
 });
