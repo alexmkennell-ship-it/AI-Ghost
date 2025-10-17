@@ -20,22 +20,20 @@
       width: 100vw;
       height: 90vh;
     }
-    model-viewer {
+  model-viewer {
   position: absolute;
-  top: 0;
-  left: 0;
-  width: 100vw;
-  height: 90vh;
+  inset: 0;
+  width: 100%;
+  height: 100%;
   opacity: 0;
-  transition: opacity 0.8s ease-in-out;
+  transition: opacity 0.6s ease-in-out; /* match blendMs */
+  will-change: opacity;
 }
 model-viewer.active {
   opacity: 1;
-  z-index: 2;
+  z-index: 2; /* top when active */
 }
-model-viewer.inactive {
-  z-index: 1;
-}
+
 
     #status {
       height: 10vh;
