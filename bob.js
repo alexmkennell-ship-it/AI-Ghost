@@ -1,20 +1,17 @@
-// bob.js — dynamic model swapping version (for separate GLBs per animation)
+// bob.js — stable version (dynamic GLB + working mic)
 
 const bob = document.getElementById("bob");
 const statusEl = document.getElementById("status");
 const WORKER_URL = "https://ghostaiv1.alexmkennell.workers.dev";
-const MODEL_BASE =
-  "https://pub-30bcc0b2a7044074a19efdef19f69857.r2.dev/models/";
+const MODEL_BASE = "https://pub-30bcc0b2a7044074a19efdef19f69857.r2.dev/models/";
 
-// ---------- Animation Definitions ----------
+// Animation names
 const ANIM = {
   IDLE_MAIN: "Animation_Long_Breathe_and_Look_Around_withSkin",
   SLEEP: "Animation_Sleep_Normally_withSkin",
   WAKE: "Animation_Wake_Up_and_Look_Up_withSkin",
   STAND: "Animation_Stand_Up1_withSkin",
   WAVE: "Animation_Big_Wave_Hello_withSkin",
-  ALERT: "Animation_Alert_withSkin",
-  ALERT_RIGHT: "Animation_Alert_Quick_Turn_Right_withSkin",
   ANGRY: "Animation_Angry_Ground_Stomp_withSkin",
   SHRUG: "Animation_Shrug_withSkin",
   TALK_1: "Animation_Talk_Passionately_withSkin",
@@ -30,85 +27,45 @@ const ANIM = {
 const idlePool = [ANIM.IDLE_MAIN, ANIM.FUN_1, ANIM.FUN_2, ANIM.FUN_3];
 const talkPool = [ANIM.TALK_1, ANIM.TALK_2, ANIM.TALK_3, ANIM.TALK_4, ANIM.AGREE];
 
-// ---------- Timers ----------
 let state = "idle";
 let lastActivity = Date.now();
 let talkAnimTimer = null;
-let sleepCheckTimer = null;
-let funTimer = null;
-let idleSwapTimer = null;
+let sleepTimer = null;
+let idleTimer = null;
 
-// ---------- Utility ----------
 const rand = (min, max) => Math.floor(min + Math.random() * (max - min + 1));
 const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
 const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
-function setStatus(msg) {
-  if (statusEl) statusEl.textContent = msg;
-}
-function bumpActivity() {
-  lastActivity = Date.now();
+function setStatus(msg) { if (statusEl) statusEl.textContent = msg; }
+function bumpActivity() { lastActivity = Date.now(); }
+
+// Wait until <model-viewer> finishes loading the new GLB
+function waitForModelLoad() {
+  return new Promise((resolve) => {
+    bob.addEventListener("load", resolve, { once: true });
+  });
 }
 
-// ---------- Dynamic Animation Loader ----------
+// Change animation safely
 async function setAnim(name, holdMs = 0) {
   if (!bob) return;
   bob.src = `${MODEL_BASE}${name}.glb`;
-  console.log("🎞️ Playing:", name);
+  console.log("🎞️ Animation:", name);
+  await waitForModelLoad();
   if (holdMs > 0) await sleep(holdMs);
 }
 
-// ---------- Idle & Fun Behavior ----------
+// Idle cycle
 function scheduleIdleSwap() {
-  clearInterval(idleSwapTimer);
-  idleSwapTimer = setInterval(() => {
+  clearInterval(idleTimer);
+  idleTimer = setInterval(() => {
     if (state !== "idle") return;
     const next = pick(idlePool);
     setAnim(next);
   }, rand(40000, 70000));
 }
 
-function scheduleFunEvents() {
-  clearTimeout(funTimer);
-  funTimer = setTimeout(async () => {
-    if (state === "idle") {
-      const fun = pick([ANIM.FUN_1, ANIM.FUN_2, ANIM.FUN_3]);
-      await setAnim(fun, 2500);
-      await setAnim(ANIM.IDLE_MAIN);
-    }
-    scheduleFunEvents();
-  }, rand(600000, 900000));
-}
-
-function scheduleSleepCheck() {
-  clearInterval(sleepCheckTimer);
-  sleepCheckTimer = setInterval(async () => {
-    if (state !== "idle") return;
-    const idleFor = Date.now() - lastActivity;
-    if (idleFor >= 5 * 60_000) {
-      await enterSleep();
-    } else if (idleFor >= 4 * 60_000) {
-      await setAnim(ANIM.AGREE, 1200);
-      await setAnim(ANIM.IDLE_MAIN);
-    }
-  }, 10000);
-}
-
-// ---------- Talking Animation ----------
-function startTalkingLoop() {
-  clearInterval(talkAnimTimer);
-  talkAnimTimer = setInterval(() => {
-    if (state !== "talking") return;
-    setAnim(pick(talkPool));
-  }, rand(1200, 2000));
-}
-
-function stopTalkingLoop() {
-  clearInterval(talkAnimTimer);
-  talkAnimTimer = null;
-  setAnim(ANIM.IDLE_MAIN);
-}
-
-// ---------- Voice Recognition ----------
+// Voice recognition
 function startVoiceRecognition() {
   const SpeechRecognition =
     window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -122,7 +79,7 @@ function startVoiceRecognition() {
   recognition.continuous = true;
   recognition.interimResults = false;
 
-  recognition.onstart = () => setStatus("👂 Listening…");
+  recognition.onstart = () => setStatus("👂 Listening...");
   recognition.onresult = async (event) => {
     const transcript =
       event.results[event.results.length - 1][0].transcript.trim();
@@ -136,7 +93,7 @@ function startVoiceRecognition() {
   recognition.start();
 }
 
-// ---------- Chat + TTS ----------
+// Chat + TTS
 async function handleUserInput(userInput) {
   try {
     console.log("🎙️ User:", userInput);
@@ -150,32 +107,24 @@ async function handleUserInput(userInput) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ prompt: userInput }),
     });
-    if (!chatResp.ok) throw new Error("Chat request failed");
     const { reply } = await chatResp.json();
     console.log("💀 Bob:", reply);
-    setStatus(reply || "(skeletal silence…)");
-
-    if (/hello|hi|howdy/i.test(reply)) await setAnim(ANIM.WAVE, 1200);
-    else if (/angry|mad|heck/i.test(reply)) await setAnim(ANIM.ANGRY, 1200);
-    else if (/shrug|unsure|maybe/i.test(reply)) await setAnim(ANIM.SHRUG, 1000);
+    setStatus(reply || "(skeletal silence...)");
 
     const ttsResp = await fetch(`${WORKER_URL}/tts`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text: reply, voice: "sage" }),
     });
-    if (!ttsResp.ok) throw new Error(`TTS failed: ${ttsResp.status}`);
     const blob = await ttsResp.blob();
     const url = URL.createObjectURL(blob);
     const audio = new Audio(url);
 
     state = "talking";
-    audio.onplay = () => {
-      startTalkingLoop();
-    };
+    startTalkingLoop();
+
     audio.onended = async () => {
       stopTalkingLoop();
-      bumpActivity();
       await setAnim(ANIM.IDLE_MAIN);
       state = "idle";
     };
@@ -185,45 +134,54 @@ async function handleUserInput(userInput) {
     } catch {
       console.warn("⚠️ Autoplay blocked, waiting for click.");
       setStatus("👆 Click anywhere to let Bob speak.");
-      document.body.addEventListener(
-        "click",
-        () => audio.play().catch(() => {}),
-        { once: true }
-      );
+      document.body.addEventListener("click", () => audio.play(), { once: true });
     }
   } catch (err) {
-    console.error("💀 Error:", err);
+    console.error("💀 Error talking to Bob:", err);
     setStatus("💀 Bob’s connection got spooked.");
   }
 }
 
-// ---------- Sleep / Wake ----------
+// Talking animation loop
+function startTalkingLoop() {
+  clearInterval(talkAnimTimer);
+  talkAnimTimer = setInterval(() => {
+    if (state !== "talking") return;
+    setAnim(pick(talkPool));
+  }, rand(1200, 2000));
+}
+
+function stopTalkingLoop() {
+  clearInterval(talkAnimTimer);
+  talkAnimTimer = null;
+}
+
+// Sleep mode
 async function enterSleep() {
   if (state === "sleeping") return;
-  console.log("💤 Bob going to sleep...");
   state = "sleeping";
   setStatus("💤 Bob’s snoozin’...");
   await setAnim(ANIM.SLEEP);
 }
 
+// Wake up sequence (fixed)
 async function wakeSequence(greet = true) {
   console.log("🌅 Bob waking up...");
   state = "waking";
-  setStatus("🌅 Bob’s waking up...");
+  setStatus("🌅 Bob’s wakin’ up...");
   await setAnim(ANIM.WAKE, 2500);
   await setAnim(ANIM.STAND, 1500);
   if (greet) await setAnim(ANIM.WAVE, 1200);
   await setAnim(ANIM.IDLE_MAIN);
+  await waitForModelLoad(); // ✅ ensures model is loaded before mic starts
   state = "idle";
   setStatus("🎙 Say somethin’, partner…");
   bumpActivity();
   scheduleIdleSwap();
-  scheduleFunEvents();
-  scheduleSleepCheck();
   startVoiceRecognition();
 }
 
-// ---------- Boot ----------
+// Boot sequence
 window.addEventListener("DOMContentLoaded", () => {
   if (!bob) return;
   bob.addEventListener("load", async () => {
@@ -240,7 +198,6 @@ window.addEventListener("DOMContentLoaded", () => {
       { once: true }
     );
   });
-
   document.addEventListener("click", bumpActivity, { passive: true });
   document.addEventListener("keydown", bumpActivity, { passive: true });
 });
