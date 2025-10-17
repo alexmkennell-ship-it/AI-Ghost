@@ -49,7 +49,10 @@ function setStatus(msg) {
   ensureDomRefs();
   if (statusEl) statusEl.textContent = msg;
 }
-function bumpActivity() { lastActivity = Date.now(); }
+
+function bumpActivity() {
+  lastActivity = Date.now();
+}
 
 let currentAnim = null;
 
@@ -180,17 +183,14 @@ async function setAnim(name, holdMs = 0) {
   ensureDomRefs();
   if (!bob) return;
 
-  let nextSrc = glbCache.get(name) || null;
-  if (!nextSrc) {
-    try {
-      nextSrc = await ensureGlbUrl(name);
-    } catch (err) {
-      console.warn(`⚠️ Falling back to direct load for ${name}.`, err);
-      nextSrc = `${MODEL_BASE}${name}.glb`;
-    }
+  let nextSrc = null;
+  try {
+    nextSrc = await ensureGlbUrl(name);
+  } catch (err) {
+    console.warn(`⚠️ Falling back to direct load for ${name}.`, err);
+    nextSrc = `${MODEL_BASE}${name}.glb`;
   }
 
-  const nextSrc = `${MODEL_BASE}${name}.glb`;
   const currentSrc = bob.getAttribute("src");
   const needsSrcSwap = currentSrc !== nextSrc;
 
@@ -303,9 +303,6 @@ async function handleUserInput(userInput) {
 
     const kickOffTalking = () => {
       cleanupPlaybackStarters();
-    const onPlaybackStart = () => {
-      audio.removeEventListener("playing", onPlaybackStart);
-      audio.removeEventListener("play", onPlaybackStart);
       state = "talking";
       startTalkingLoop();
     };
@@ -330,10 +327,6 @@ async function handleUserInput(userInput) {
 
     audio.onended = async () => {
       cleanupPlaybackStarters();
-    audio.addEventListener("playing", onPlaybackStart);
-    audio.addEventListener("play", onPlaybackStart);
-
-    audio.onended = async () => {
       await stopTalkingLoop();
       await setAnim(ANIM.IDLE_MAIN);
       state = "idle";
