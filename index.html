@@ -44,15 +44,20 @@
   </style>
 </head>
 <body>
-  <model-viewer
-    id="bob"
-    src="https://pub-30bcc0b2a7044074a19efdef19f69857.r2.dev/models/Animation_Long_Breathe_and_Look_Around_withSkin.glb"
-    alt="Bob the Skeleton"
-    autoplay
-    camera-controls
-    exposure="1"
-    shadow-intensity="1"
-  ></model-viewer>
+ <model-viewer
+  id="bob"
+  src="https://pub-30bcc0b2a7044074a19efdef19f69857.r2.dev/models/Animation_Long_Breathe_and_Look_Around_withSkin.glb"
+  alt="Bob the Skeleton"
+  autoplay
+  camera-controls
+  exposure="1"
+  shadow-intensity="1"
+
+  interaction-prompt="none"
+  disable-zoom
+  disable-tap
+></model-viewer>
+
 
   <div id="status">Loading Bob…</div>
   <div id="startPrompt">👆 Click to wake Bob up</div>
