@@ -3,34 +3,24 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Bob the Talking Skeleton</title>
-
-  <!-- Model Viewer -->
+  <title>Bob the Bone Cowboy</title>
   <script type="module" src="https://unpkg.com/@google/model-viewer/dist/model-viewer.min.js"></script>
-
   <style>
-    html, body {
+    body {
       margin: 0;
-      background: #0d0d0d;
+      background: radial-gradient(circle at center, #0b0b0b 50%, #000 100%);
       overflow: hidden;
-      height: 100vh;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      flex-direction: column;
-      color: #0f0;
+      text-align: center;
+      color: #b8ffb8;
       font-family: monospace;
     }
-
-    #bob {
-      width: 500px;
-      height: 600px;
+    model-viewer {
+      width: 100vw;
+      height: 90vh;
     }
-
     #status {
-      margin-top: 10px;
-      font-size: 1rem;
-      opacity: 0.8;
+      font-size: 1.2rem;
+      margin-top: 1rem;
     }
   </style>
 </head>
@@ -43,113 +33,122 @@
     camera-controls
     exposure="1"
     shadow-intensity="1"
-    animation-name="Animation_Long_Breathe_and_Look_Around_withSkin"
   ></model-viewer>
-
-  <div id="status">💀 Bob’s booting up...</div>
+  <div id="status">Loading Bob…</div>
 
   <script>
     const bob = document.getElementById("bob");
     const status = document.getElementById("status");
-    const workerURL = "https://ghostaiv1.alexmkennell.workers.dev/";
 
-    // --- Wait for Bob to load ---
+    // Optional proxy to fix CORS
+    const workerURL = "https://ghostaiv1.alexmkennell.workers.dev/";
+    const proxyURL = `https://corsproxy.io/?${workerURL}`;
+
     bob.addEventListener("load", () => {
-      console.log("✅ Bob is ready!");
-      status.textContent = "🎙 Say something to Bob...";
+      console.log("✅ Bob ready");
+      status.textContent = "🎙 Say somethin’, partner…";
       startVoiceRecognition();
     });
 
-    // --- Play Animation Helper ---
     function playAnimation(name) {
       if (!bob) return;
-      try {
-        bob.animationName = name;
-        console.log("Bob animation:", name);
-      } catch (e) {
-        console.warn("Animation play error:", e);
-      }
+      bob.animationName = name;
     }
 
-    // --- Speech Recognition Setup ---
     function startVoiceRecognition() {
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
       if (!SpeechRecognition) {
-        status.textContent = "❌ Speech recognition not supported.";
+        status.textContent = "❌ No speech recognition support.";
         return;
       }
-
       const recognition = new SpeechRecognition();
       recognition.lang = "en-US";
       recognition.continuous = true;
       recognition.interimResults = false;
 
       recognition.onstart = () => {
-        console.log("🎙 Bob is listening...");
+        console.log("🎙 Listening...");
         status.textContent = "👂 Listening...";
-        playAnimation("Animation_Long_Breathe_and_Look_Around_withSkin");
       };
 
       recognition.onresult = (event) => {
         const transcript = event.results[event.resultIndex][0].transcript.trim();
-        console.log("👂 You said:", transcript);
-        status.textContent = `🧠 "${transcript}"`;
+        console.log("You said:", transcript);
+        status.textContent = `💬 “${transcript}”`;
         recognition.stop();
         talkToBob(transcript);
       };
 
       recognition.onerror = (e) => {
-        console.warn("Speech recognition error:", e);
-        status.textContent = "⚠️ Mic error or no speech detected.";
+        console.warn("Speech error:", e);
+        status.textContent = "⚠️ Mic issue.";
       };
 
-      recognition.onend = () => {
-        console.log("🔁 Restarting listener...");
-        setTimeout(() => recognition.start(), 1500);
-      };
-
+      recognition.onend = () => setTimeout(() => recognition.start(), 1500);
       recognition.start();
     }
 
-    // --- Talk to Worker and Speak Response ---
     async function talkToBob(userInput) {
       try {
         playAnimation("Animation_Long_Breathe_and_Look_Around_withSkin");
-        console.log("Talking to Bob:", userInput);
-
-        const response = await fetch(workerURL, {
+        const response = await fetch(proxyURL, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ prompt: userInput })
+          body: JSON.stringify({ prompt: userInput }),
         });
-
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
-
         const data = await response.json();
-        const reply = data.reply || "(spooky silence...)";
+        const reply = data.reply || "(spooky silence…)";
 
-        console.log("💬 Bob:", reply);
-        status.textContent = `💀 ${reply}`;
+        console.log("💀 Bob:", reply);
+        status.textContent = reply;
 
-        // --- Voice Output ---
+        // --- SPEECH: Raspy Cowboy ---
         const speech = new SpeechSynthesisUtterance(reply);
-        speech.voice = speechSynthesis.getVoices().find(v =>
-          v.name.includes("Microsoft David") || v.name.includes("Google US English")
+        const voice = speechSynthesis.getVoices().find(v =>
+          v.name.includes("David") || v.name.includes("Google US English")
         ) || speechSynthesis.getVoices()[0];
-        speech.rate = 0.9;
-        speech.pitch = 0.8;
+        speech.voice = voice;
+        speech.rate = 0.8;
+        speech.pitch = 0.6;
         speech.volume = 1.0;
 
-        playAnimation("Animation_Long_Breathe_and_Look_Around_withSkin");
-        speechSynthesis.speak(speech);
+        // Lip sync variables
+        const animLoop = setInterval(() => {
+          const rand = Math.random();
+          if (rand > 0.5) bob.animationName = "Animation_Long_Breathe_and_Look_Around_withSkin";
+          else bob.animationName = "";
+        }, 120);
+
+        speech.onstart = () => {
+          const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+          const bufferSize = 2 * audioCtx.sampleRate;
+          const noiseBuffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+          const output = noiseBuffer.getChannelData(0);
+          for (let i = 0; i < bufferSize; i++) output[i] = Math.random() * 0.1 - 0.05;
+          const noise = audioCtx.createBufferSource();
+          noise.buffer = noiseBuffer;
+          const gainNode = audioCtx.createGain();
+          gainNode.gain.value = 0.02;
+          noise.connect(gainNode).connect(audioCtx.destination);
+          noise.start();
+          speech._noise = { audioCtx, noise };
+        };
 
         speech.onend = () => {
+          if (speech._noise) {
+            speech._noise.noise.stop();
+            speech._noise.audioCtx.close();
+          }
+          clearInterval(animLoop);
           playAnimation("Animation_Long_Breathe_and_Look_Around_withSkin");
-          setTimeout(() => status.textContent = "🎙 Say something else...", 500);
+          setTimeout(() => status.textContent = "🎙 Say somethin’ else, cowboy…", 500);
         };
+
+        speechSynthesis.speak(speech);
       } catch (err) {
         console.error("Error talking to Bob:", err);
-        status.textContent = "💀 Bob got spooked (connection issue).";
+        status.textContent = "💀 Bob’s connection got spooked.";
       }
     }
   </script>
