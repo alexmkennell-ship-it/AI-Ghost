@@ -1,10 +1,7 @@
-// bob.js — smooth crossfade rewrite
+// bob.js — smooth crossfade + live microphone listening
 //
-// Key changes:
-//  - Dual <model-viewer> instances crossfaded for seamless animation swaps
-//  - Aggressive GLB preloading + objectURL cache
-//  - Smarter talk/idle scheduler with minimum clip duration to avoid jitter
-//  - Fewer layout thrashes via double-rAF gates on swaps
+// Combines the crossfade rewrite with a built-in mic listener
+// so Bob actively listens and responds in real time.
 //
 const WORKER_URL = "https://ghostaiv1.alexmkennell.workers.dev";
 const MODEL_BASE = "https://pub-30bcc0b2a7044074a19efdef19f69857.r2.dev/models/";
@@ -17,7 +14,7 @@ const ANIM = {
   SHRUG: "Animation_Shrug_withSkin",
   TALK_1: "Animation_Talk_Passionately_withSkin",
   TALK_2: "Animation_Talk_with_Hands_Open_withSkin",
-    TALK_3: "Animation_Talk_with_Left_Hand_Raised_withSkin",
+  TALK_3: "Animation_Talk_with_Left_Hand_Raised_withSkin",
   TALK_4: "Animation_Talk_with_Right_Hand_Open_withSkin",
   YAWN: "Animation_Yawn_withSkin",
 };
@@ -31,8 +28,8 @@ let currentAnim = null;
 let state = "boot"; // boot | idle | talking | sleeping
 
 // Cache of preloaded GLBs
-const glbCache = new Map(); // name -> objectURL
-const inflight = new Map(); // name -> Promise<string>
+const glbCache = new Map();
+const inflight = new Map();
 
 function setStatus(msg) {
   statusEl ??= document.getElementById("status");
@@ -197,6 +194,39 @@ document.addEventListener("pointerdown", () => {
     setAnim(ANIM.IDLE_MAIN, { minHoldMs: 800 });
   }
 }, { passive: true });
+
+// --- Microphone listener (SpeechRecognition) ---
+window.SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+if (window.SpeechRecognition) {
+  const recognition = new SpeechRecognition();
+  recognition.continuous = true;
+  recognition.interimResults = false;
+  recognition.lang = "en-US";
+
+  recognition.onresult = async (event) => {
+    const transcript = event.results[event.results.length - 1][0].transcript.trim();
+    if (transcript.length > 0) {
+      await speakAndAnimate(transcript);
+    }
+  };
+
+  recognition.onerror = (e) => console.warn("Speech recognition error:", e.error);
+  recognition.onend = () => {
+    if (state === "idle") recognition.start();
+  };
+
+  window.addEventListener("click", () => {
+    try {
+      recognition.start();
+      setStatus("👂 Listening (mic on)...");
+    } catch (err) {
+      console.warn("Mic start error:", err);
+    }
+  }, { once: true });
+} else {
+  console.warn("SpeechRecognition not supported in this browser.");
+}
 
 // --- Boot ---
 async function boot() {
