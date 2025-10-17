@@ -78,9 +78,27 @@ function waitForModelLoad(timeout = 5000) {
 // Change animation safely
 async function setAnim(name, holdMs = 0) {
   if (!bob) return;
-  bob.src = `${MODEL_BASE}${name}.glb`;
-  console.log("🎞️ Animation:", name);
-  await waitForModelLoad();
+
+  const nextSrc = `${MODEL_BASE}${name}.glb`;
+  const currentSrc = bob.getAttribute("src");
+  const needsSrcSwap = currentSrc !== nextSrc;
+
+  if (needsSrcSwap) {
+    bob.setAttribute("src", nextSrc);
+    console.log("🎞️ Animation:", name);
+    await waitForModelLoad();
+  } else {
+    console.log("🎞️ Animation (restart):", name);
+  }
+
+  // Ensure the clip starts from the beginning and is actively playing.
+  try {
+    bob.currentTime = 0;
+    bob.play();
+  } catch (err) {
+    console.warn("⚠️ Unable to force animation playback.", err);
+  }
+
   if (holdMs > 0) await sleep(holdMs);
 }
 
@@ -211,51 +229,45 @@ function startListening() {
 window.addEventListener("DOMContentLoaded", () => {
   if (!bob) return;
 
-  const activate = async () => {
-    if (hasStarted) return;
-    console.log("🖱️ Activation click detected");
+  const overlay = document.getElementById("wakeOverlay");
+
+  const unlockAudio = async () => {
     try {
       await new Audio().play().catch(() => {});
     } catch (err) {
       console.warn("⚠️ Unable to unlock audio on activation.", err);
-  const overlay = document.getElementById("wakeOverlay");
-  const handleWakeClick = async () => {
+    }
+  };
+
+  const activate = async () => {
+    if (hasStarted) return;
+    console.log("🖱️ Activation click detected");
+    await unlockAudio();
+    startListening();
+  };
+
+  const handleWakeClick = async (event) => {
+    event?.stopPropagation?.();
     console.log("🖱️ Wake click detected");
     overlay?.remove();
-    try {
-      await new Audio().play().catch(() => {});
-    } catch {}
-    startListening();
+    await activate();
   };
 
-  document.addEventListener("click", activate, { once: true });
-
-  setStatus("👆 Click anywhere to start.");
-
-  bob.addEventListener("load", () => {
-    console.log("✅ Bob ready!");
   if (overlay) {
     overlay.addEventListener("click", handleWakeClick, { once: true });
+    setStatus("👆 Click to chat with Bob.");
+  } else {
+    setStatus("👆 Click anywhere to start.");
   }
 
-  setStatus("👆 Click to chat with Bob.");
-
   bob.addEventListener("load", () => {
     console.log("✅ Bob ready!");
-    // If the overlay never existed, start listening after the model loads.
     if (!overlay && !hasStarted) {
-      handleWakeClick();
+      activate();
     }
-    startListening();
-  };
+  });
 
   document.addEventListener("click", activate, { once: true });
-
-  setStatus("👆 Click anywhere to start.");
-
-  bob.addEventListener("load", () => {
-    console.log("✅ Bob ready!");
-  });
 
   document.addEventListener("click", bumpActivity, { passive: true });
   document.addEventListener("keydown", bumpActivity, { passive: true });
