@@ -6,49 +6,54 @@
   <title>Bob the Bone Cowboy</title>
   <script type="module" src="https://unpkg.com/@google/model-viewer/dist/model-viewer.min.js"></script>
   <style>
-    body {
+    :root { --fade-ms: 360ms; }
+    html, body {
+      height: 100%;
       margin: 0;
       background: radial-gradient(circle at center, #0b0b0b 50%, #000 100%);
-      overflow: hidden;
-      text-align: center;
       color: #b8ffb8;
-      font-family: monospace;
-      min-height: 100vh;
-      position: relative;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      overflow: hidden;
     }
-    model-viewer {
+    .stage {
+      position: relative;
       width: 100vw;
       height: 90vh;
     }
-    #status {
+    model-viewer {
       position: absolute;
-      bottom: 24px;
-      left: 50%;
-      transform: translateX(-50%);
-      padding: 0.75rem 1.5rem;
-      border-radius: 999px;
-      background: rgba(0, 0, 0, 0.65);
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      opacity: 0;
+      transition: opacity var(--fade-ms) ease;
+      will-change: opacity;
+      exposure: 0.9;
+      shadow-intensity: 0.2;
+      touch-action: none;
+    }
+    model-viewer.active { opacity: 1; }
+    #status {
+      height: 10vh;
+      display: grid;
+      place-items: center;
       font-size: 1rem;
-      letter-spacing: 0.03em;
-      transition: opacity 0.6s ease;
+      opacity: 0.88;
+      user-select: none;
     }
   </style>
 </head>
 <body>
-<model-viewer
-  id="bob"
-  src="https://pub-30bcc0b2a7044074a19efdef19f69857.r2.dev/models/Animation_Long_Breathe_and_Look_Around_withSkin.glb"
-  alt="Bob the Skeleton"
-  autoplay
-  camera-controls
-  exposure="1"
-  shadow-intensity="1"
-  interaction-prompt="none"
-  disable-zoom
-  disable-tap
-></model-viewer>
-  <div id="status">Loading Bob…</div>
-
+  <div class="stage">
+    <model-viewer id="mvA" autoplay ar-modes="webxr scene-viewer quick-look" disable-tap
+      camera-controls="false" interaction-prompt="none" exposure="0.95">
+    </model-viewer>
+    <model-viewer id="mvB" autoplay ar-modes="webxr scene-viewer quick-look" disable-tap
+      camera-controls="false" interaction-prompt="none" exposure="0.95">
+    </model-viewer>
+  </div>
+  <div id="status">Loading…</div>
   <script type="module" src="./bob.js"></script>
 </body>
 </html>
