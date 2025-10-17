@@ -37,77 +37,45 @@ export default {
 
     // === Handle text-to-speech ===
     if (request.method === "POST" && url.pathname === "/tts") {
-      try {
-        const {
-          text = "",
-          voice = "alloy",
-          model = "gpt-4o-mini-tts",
-          format = "mp3",
-        } = await request.json();
+      const { text = "", voice = "alloy" } = await request.json();
 
-        if (!text.trim()) {
-          return new Response("Missing text for TTS", {
-            status: 400,
-            headers: corsHeaders,
-          });
-        }
+      if (!text.trim()) {
+        return new Response("Missing text for TTS", {
+          status: 400,
+          headers: corsHeaders,
+        });
+      }
 
-        const body = {
-          model,
+      const ttsResponse = await fetch("https://api.openai.com/v1/audio/speech", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${env.OPENAI_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "gpt-4o-mini-tts",
           voice,
           input: text,
-        };
+        }),
+      });
 
-        if (format) {
-          body.format = format;
-        }
-
-        const ttsResponse = await fetch(
-          "https://api.openai.com/v1/audio/speech",
-          {
-            method: "POST",
-            headers: {
-              "Authorization": `Bearer ${env.OPENAI_API_KEY}`,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify(body),
-          }
-        );
-
-        if (!ttsResponse.ok) {
-          const errText = await ttsResponse.text();
-          return new Response(errText || "TTS request failed", {
-            status: ttsResponse.status,
-            headers: corsHeaders,
-          });
-        }
-
-        const typeMap = {
-          mp3: "audio/mpeg",
-          wav: "audio/wav",
-          opus: "audio/ogg",
-          aac: "audio/aac",
-          flac: "audio/flac",
-        };
-
-        return new Response(ttsResponse.body, {
-          headers: {
-            ...corsHeaders,
-            "Content-Type": typeMap[format] || "audio/mpeg",
-          },
+      if (!ttsResponse.ok) {
+        const errorText = await ttsResponse.text();
+        return new Response(errorText || "TTS request failed", {
+          status: ttsResponse.status,
+          headers: corsHeaders,
         });
-      } catch (error) {
-        return new Response(
-          JSON.stringify({ error: error.message || "TTS request failed" }),
-          {
-            status: 500,
-            headers: {
-              ...corsHeaders,
-              "Content-Type": "application/json",
-            },
-          }
-        );
       }
+
+      const contentType =
+        ttsResponse.headers.get("Content-Type") || "audio/mpeg";
+
+      return new Response(ttsResponse.body, {
+        headers: {
+          ...corsHeaders,
+          "Content-Type": contentType,
+        },
+      });
     }
 
     // === Handle chat messages ===
