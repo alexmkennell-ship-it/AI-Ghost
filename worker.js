@@ -37,12 +37,7 @@ export default {
 
     // === Handle text-to-speech ===
     if (request.method === "POST" && url.pathname === "/tts") {
-      const {
-        text = "",
-        voice = "alloy",
-        format = "mp3",
-        style,
-      } = await request.json();
+      const { text = "", voice = "alloy" } = await request.json();
 
       if (!text.trim()) {
         return new Response("Missing text for TTS", {
@@ -51,31 +46,16 @@ export default {
         });
       }
 
-      const ttsResponse = await fetch("https://api.openai.com/v1/responses", {
+      const ttsResponse = await fetch("https://api.openai.com/v1/audio/speech", {
         method: "POST",
         headers: {
           "Authorization": `Bearer ${env.OPENAI_API_KEY}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model: "gpt-4o-audio-preview",
-          modalities: ["audio"],
-          audio: {
-            voice,
-            format,
-            ...(style ? { style } : {}),
-          },
-          input: [
-            {
-              role: "user",
-              content: [
-                {
-                  type: "input_text",
-                  text,
-                },
-              ],
-            },
-          ],
+          model: "gpt-4o-mini-tts",
+          voice,
+          input: text,
         }),
       });
 
@@ -87,35 +67,13 @@ export default {
         });
       }
 
-      const data = await ttsResponse.json();
-      const audioItem = data.output?.find(
-        (item) => item.type === "output_audio" && item.audio?.data
-      );
+      const contentType =
+        ttsResponse.headers.get("Content-Type") || "audio/mpeg";
 
-      if (!audioItem) {
-        return new Response("No audio returned from model", {
-          status: 502,
-          headers: corsHeaders,
-        });
-      }
-
-      const audioData = audioItem.audio.data;
-      const audioFormat = audioItem.audio.format || format || "mp3";
-      const binaryAudio = Uint8Array.from(atob(audioData), (c) =>
-        c.charCodeAt(0)
-      );
-
-      const typeMap = {
-        mp3: "audio/mpeg",
-        wav: "audio/wav",
-        opus: "audio/ogg",
-        pcm16: "audio/wav",
-      };
-
-      return new Response(binaryAudio.buffer, {
+      return new Response(ttsResponse.body, {
         headers: {
           ...corsHeaders,
-          "Content-Type": typeMap[audioFormat] || "audio/mpeg",
+          "Content-Type": contentType,
         },
       });
     }
