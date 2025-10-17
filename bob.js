@@ -331,6 +331,46 @@ function scheduleIdleSwap() {
 let abortSpeech = null;
 async function speakAndAnimate(userText) {
   if (!userText) return;
+// inside speakAndAnimate(), replace the TTS fetch + play logic with:
+
+const maxRetries = 2;
+let ttsResp, ttsBuffer;
+for (let attempt = 0; attempt <= maxRetries; attempt++) {
+  try {
+    ttsResp = await fetch(`${WORKER_URL}/tts`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: replyText, voice: "copper" }),
+      signal: ac.signal,
+    });
+    if (!ttsResp.ok) {
+      const errtxt = await ttsResp.text();
+      console.warn(`TTS attempt ${attempt} failed:`, ttsResp.status, errtxt);
+      if (attempt === maxRetries) {
+        throw new Error(`TTS failed: ${ttsResp.status}`);
+      }
+      // fallback: try alternate voice
+      continue;
+    }
+    ttsBuffer = await ttsResp.arrayBuffer();
+    break;
+  } catch (err) {
+    console.warn("TTS error:", err);
+    if (attempt === maxRetries) {
+      setStatus("⚠️ Couldn’t speak — error from server");
+      state = "idle";
+      startMicroIdle();
+      return;
+    }
+  }
+}
+
+// Now use ttsBuffer (Blob etc) as before
+const blob = new Blob([ttsBuffer], { type: "audio/mpeg" });
+const url = URL.createObjectURL(blob);
+const audio = new Audio(url);
+audio.playbackRate = 0.9;
+...
 
   try {
     state = "talking";
