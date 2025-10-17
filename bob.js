@@ -1,7 +1,7 @@
 // bob.js — stable version (dynamic GLB + working mic)
 
-const bob = document.getElementById("bob");
-const statusEl = document.getElementById("status");
+let bob = null;
+let statusEl = null;
 const WORKER_URL = "https://ghostaiv1.alexmkennell.workers.dev";
 const MODEL_BASE = "https://pub-30bcc0b2a7044074a19efdef19f69857.r2.dev/models/";
 
@@ -34,7 +34,21 @@ let idleSwapInFlight = false;
 const rand = (min, max) => Math.floor(min + Math.random() * (max - min + 1));
 const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
 const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
-function setStatus(msg) { if (statusEl) statusEl.textContent = msg; }
+
+function ensureDomRefs() {
+  if (!bob) {
+    bob = document.getElementById("bob");
+  }
+
+  if (!statusEl) {
+    statusEl = document.getElementById("status");
+  }
+}
+
+function setStatus(msg) {
+  ensureDomRefs();
+  if (statusEl) statusEl.textContent = msg;
+}
 function bumpActivity() { lastActivity = Date.now(); }
 
 let currentAnim = null;
@@ -125,6 +139,7 @@ function pickDistinct(pool) {
 // Wait until <model-viewer> finishes loading the new GLB
 function waitForModelLoad(timeout = 5000) {
   return new Promise((resolve) => {
+    ensureDomRefs();
     if (!bob) {
       resolve();
       return;
@@ -162,6 +177,7 @@ function waitForModelLoad(timeout = 5000) {
 
 // Change animation safely
 async function setAnim(name, holdMs = 0) {
+  ensureDomRefs();
   if (!bob) return;
 
   let nextSrc = glbCache.get(name) || null;
@@ -390,6 +406,12 @@ async function enterSleep() {
 
 // Start listening immediately after the user clicks
 function startListening() {
+  ensureDomRefs();
+  if (!bob) {
+    setStatus("❌ Bob is missing from the page.");
+    return;
+  }
+
   if (hasStarted) return;
   hasStarted = true;
 
@@ -408,7 +430,12 @@ function startListening() {
 
 // Boot sequence
 window.addEventListener("DOMContentLoaded", () => {
-  if (!bob) return;
+  ensureDomRefs();
+  if (!bob) {
+    console.warn("⚠️ Bob element missing in DOM — status frozen.");
+    setStatus("❌ Bob failed to appear on the page.");
+    return;
+  }
 
   const overlay = document.getElementById("wakeOverlay");
 
