@@ -40,9 +40,40 @@ function setStatus(msg) { if (statusEl) statusEl.textContent = msg; }
 function bumpActivity() { lastActivity = Date.now(); }
 
 // Wait until <model-viewer> finishes loading the new GLB
-function waitForModelLoad() {
+function waitForModelLoad(timeout = 5000) {
   return new Promise((resolve) => {
-    bob.addEventListener("load", resolve, { once: true });
+    if (!bob) {
+      resolve();
+      return;
+    }
+
+    let settled = false;
+    const cleanup = () => {
+      if (settled) return;
+      settled = true;
+      bob.removeEventListener("load", onLoad);
+      bob.removeEventListener("error", onError);
+      clearTimeout(timer);
+      resolve();
+    };
+
+    const onLoad = () => {
+      console.log("✅ Model loaded");
+      cleanup();
+    };
+
+    const onError = (event) => {
+      console.warn("⚠️ Model load error", event);
+      cleanup();
+    };
+
+    const timer = setTimeout(() => {
+      console.warn("⏱️ Model load timeout — continuing");
+      cleanup();
+    }, timeout);
+
+    bob.addEventListener("load", onLoad, { once: true });
+    bob.addEventListener("error", onError, { once: true });
   });
 }
 
