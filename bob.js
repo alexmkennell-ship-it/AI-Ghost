@@ -398,4 +398,4 @@ async function boot() {
   console.log("🎉 Bob ready!");
 }
 
-window.addEventListener("DOMContentLoaded",
+window.addEventListener("DOMContentLoaded"
