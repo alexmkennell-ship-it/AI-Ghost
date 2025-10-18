@@ -1,25 +1,24 @@
 /*
- * Bob.js (custom drop‑in)
+ * Bob.js (debug version)
  *
  * This script loads a 3D cowboy rig and its animations from your
  * Cloudflare R2 bucket, applies a fallback if the rig fails, and
- * ensures all meshes have a visible material. It also adds a
- * skeleton helper for debugging so you can see the bone hierarchy.
+ * forces all meshes to render as bright yellow wireframes so you can
+ * verify the geometry. It uses a fixed camera position.
  */
 
-console.log("🟢 Booting Bob (custom build)…");
+console.log("🟢 Booting Bob (debug build)…");
 
 // Base URL pointing at your public R2 bucket. Ensure CORS is enabled.
 const WORKER_URL = "https://pub-30bcc0b2a7044074a19efdef19f69857.r2.dev";
 const FBX_BASE   = `${WORKER_URL}/models/`;
 
 // Filenames (case‑sensitive!)
-const BASE_RIG   = "T-Pose.fbx";     // your rig file
-const START_ANIM = "Neutral Idle";   // animation file (without .fbx extension)
+const BASE_RIG   = "T-Pose.fbx";
+const START_ANIM = "Neutral Idle";
 
 // Fallback rig from the Three.js examples (always public)
 const FALLBACK_RIG_URL = "https://threejs.org/examples/models/fbx/Samba%20Dancing.fbx";
-const FALLBACK_REASON  = "Bob's rig failed to load. Displaying the Samba fallback.";
 
 let scene, camera, renderer, mixer, rigRoot;
 const clock = new THREE.Clock();
@@ -52,7 +51,6 @@ function waitForThree() {
  */
 function initThree() {
   renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-  // Use sRGB encoding for colour‑correct rendering (r146 syntax).
   renderer.outputEncoding = THREE.sRGBEncoding;
   renderer.setSize(window.innerWidth, window.innerHeight);
   document.body.appendChild(renderer.domElement);
@@ -60,12 +58,13 @@ function initThree() {
   scene = new THREE.Scene();
 
   camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
-  camera.position.set(0, 1.6, 5);
+  camera.position.set(0, 1.6, 4);
+  camera.lookAt(new THREE.Vector3(0, 1, 0));
 
-  const hemi = new THREE.HemisphereLight(0xffffff, 0x444444, 0.8);
-  const dir  = new THREE.DirectionalLight(0xffffff, 0.8);
+  const hemi  = new THREE.HemisphereLight(0xffffff, 0x444444, 0.8);
+  const dir   = new THREE.DirectionalLight(0xffffff, 0.8);
   dir.position.set(3, 6, 3);
-  const amb  = new THREE.AmbientLight(0xffffff, 0.3);
+  const amb   = new THREE.AmbientLight(0xffffff, 0.3);
   scene.add(hemi, dir, amb);
 
   // Optional ground plane; comment out to remove the grey bar.
@@ -79,19 +78,16 @@ function initThree() {
 }
 
 /**
- * Traverse a rig and apply a basic material to all meshes.
- * This avoids invisible meshes if texture references are broken.
+ * Traverse a rig and apply a visible material to all meshes.
+ * Using bright yellow wireframe to verify geometry.
  */
-function applyBasicMaterial(rig) {
+function applyDebugMaterial(rig) {
   rig.traverse(obj => {
     if (obj.isMesh) {
-      obj.material = new THREE.MeshStandardMaterial({
-        color: 0xffffff,
-        metalness: 0,
-        roughness: 1,
-        skinning: !!obj.isSkinnedMesh
+      obj.material = new THREE.MeshBasicMaterial({
+        color: 0xffff00,
+        wireframe: true
       });
-      obj.material.side = THREE.DoubleSide;
       obj.visible = true;
     }
   });
@@ -108,7 +104,7 @@ function addSkeletonHelper(rig) {
 }
 
 /**
- * Load the rig, position it, apply materials, and set up the camera.
+ * Load the rig, scale and position it, and add debug helpers.
  * If `useFallback` is true, loads the Samba model instead.
  */
 async function loadRig(useFallback = false) {
@@ -118,20 +114,12 @@ async function loadRig(useFallback = false) {
   try {
     const rig = await loader.loadAsync(url);
     console.log("✅ Rig loaded from", url);
-    rig.scale.setScalar(useFallback ? 0.02 : 0.01); // adjust scaling
-    rig.position.set(0, 0, 0);
+    rig.scale.setScalar(useFallback ? 0.02 : 0.02); // tweak if needed
+    rig.position.set(0, -1, 0);                      // drop onto the ground plane
     scene.add(rig);
     rigRoot = rig;
-    applyBasicMaterial(rigRoot);
+    applyDebugMaterial(rigRoot);
     addSkeletonHelper(rigRoot);
-
-    // Frame the rig in view
-    const box    = new THREE.Box3().setFromObject(rigRoot);
-    const center = box.getCenter(new THREE.Vector3());
-    const size   = box.getSize(new THREE.Vector3()).length();
-    camera.position.copy(center.clone().add(new THREE.Vector3(0, size * 0.2, size * 1.5)));
-    camera.lookAt(center);
-
     mixer = new THREE.AnimationMixer(rigRoot);
   } catch (err) {
     console.error("❌ Failed to load rig:", err);
@@ -189,7 +177,9 @@ function animate() {
     console.log("✅ THREE + FBXLoader ready.");
     initThree();
     await loadRig();
-    await play(START_ANIM);
+    if (START_ANIM) {
+      await play(START_ANIM);
+    }
     if (statusEl) statusEl.textContent = "👂 Listening…";
     animate();
   } catch (err) {
