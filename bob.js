@@ -7,7 +7,7 @@ console.log("🟢 Booting Bob (v5.4 Global Legacy)…");
 // CONFIG
 /////////////////////////////////////////////////////
 const WORKER_URL = "https://ghostaiv1.alexmkennell.workers.dev";
-const FBX_BASE = "https://pub-30bcc0b2a7044074a19efdef19f69857.r2.dev/bob-animations/models/";
+const FBX_BASE = "https://pub-30bcc0b2a7044074a19efdef19f69857.r2.dev/bob-animations/models/";;
 const TEX_URL = `${FBX_BASE}Boney_Bob_the_skeleto_1017235951_texture.png`;
 
 // Fix GitHub Pages loader timing
