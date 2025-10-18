@@ -18,6 +18,14 @@ if (typeof THREE === "undefined" || typeof THREE.FBXLoader === "undefined") {
   throw new Error("Missing THREE or FBXLoader");
 }
 
+const FBXLoader = hasFBXOnThree
+  ? globalScope.THREE.FBXLoader
+  : globalScope.FBXLoader;
+
+if (!hasFBXOnThree && hasGlobalFBX) {
+  globalScope.THREE.FBXLoader = FBXLoader;
+}
+
 console.log("✅ THREE.js + FBXLoader detected.");
 
 const FBXLoader = THREE.FBXLoader;
