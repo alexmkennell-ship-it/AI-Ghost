@@ -13,49 +13,22 @@ const TEX_URL = `${FBX_BASE}Boney_Bob_the_skeleto_1017235951_texture.png`;
 /////////////////////////////////////////////////////
 // VERIFY GLOBALS
 /////////////////////////////////////////////////////
-const globalScope = typeof window !== "undefined" ? window : globalThis;
-let FBXLoaderCtor = null;
-let usingFallback = false;
-const fallbackClips = {};
-const fallbackState = { root: null, ground: null, mixer: null };
-
-const CAM_DEFAULT = Object.freeze({
-  radius: 5.8,
-  yaw: 0,
-  pitch: 1.308996939,
-  drift: true,
-  target: null,
-});
-
-async function ensureThreeAndFBXLoader() {
-  const start = (globalScope.performance?.now?.() ?? Date.now());
-  const timeoutMs = 5000;
-  while (true) {
-    const hasThree = typeof globalScope.THREE !== "undefined";
-    const loaderCandidate = hasThree && typeof globalScope.THREE.FBXLoader === "function"
-      ? globalScope.THREE.FBXLoader
-      : typeof globalScope.FBXLoader === "function"
-        ? globalScope.FBXLoader
-        : null;
-
-    if (hasThree && loaderCandidate) {
-      if (!globalScope.THREE.FBXLoader) {
-        globalScope.THREE.FBXLoader = loaderCandidate;
-      }
-      FBXLoaderCtor = loaderCandidate;
-      console.log("✅ THREE.js + FBXLoader detected.");
-      return true;
-    }
-
-    const elapsed = (globalScope.performance?.now?.() ?? Date.now()) - start;
-    if (elapsed > timeoutMs) {
-      console.error("❌ THREE.js or FBXLoader not loaded globally. Check script order in HTML.");
-      return false;
-    }
-
-    await new Promise((resolve) => setTimeout(resolve, 50));
-  }
+if (typeof THREE === "undefined" || typeof THREE.FBXLoader === "undefined") {
+  console.error("❌ THREE.js or FBXLoader not loaded globally. Check script order in HTML.");
+  throw new Error("Missing THREE or FBXLoader");
 }
+
+const FBXLoader = hasFBXOnThree
+  ? globalScope.THREE.FBXLoader
+  : globalScope.FBXLoader;
+
+if (!hasFBXOnThree && hasGlobalFBX) {
+  globalScope.THREE.FBXLoader = FBXLoader;
+}
+
+console.log("✅ THREE.js + FBXLoader detected.");
+
+const FBXLoader = THREE.FBXLoader;
 
 /////////////////////////////////////////////////////
 // UTILITIES
@@ -72,21 +45,7 @@ let scene, camera, renderer, clock, mixer;
 let model, currentAction = null;
 let jawBone = null, fingerBones = [], focusBone = null;
 let state = "boot", micLocked = false;
-let cam = { ...CAM_DEFAULT };
-
-function applyCameraDefaults() {
-  cam.radius = CAM_DEFAULT.radius;
-  cam.yaw = CAM_DEFAULT.yaw;
-  cam.pitch = CAM_DEFAULT.pitch;
-  cam.drift = CAM_DEFAULT.drift;
-  if (typeof THREE !== "undefined" && THREE.Vector3) {
-    if (!cam.target) {
-      cam.target = new THREE.Vector3(0, 1.2, 0);
-    } else {
-      cam.target.set(0, 1.2, 0);
-    }
-  }
-}
+let cam = { radius: 5.8, yaw: 0, pitch: 1.308996939, drift: true, target: null };
 
 /////////////////////////////////////////////////////
 // FILE MAP
@@ -106,7 +65,6 @@ const FILES = {
 // INIT
 /////////////////////////////////////////////////////
 function initThree() {
-  applyCameraDefaults();
   if (!cam.target) {
     cam.target = new THREE.Vector3(0, 1.2, 0);
   }
@@ -137,18 +95,8 @@ function initThree() {
 // MODEL LOADING
 /////////////////////////////////////////////////////
 async function loadModel() {
-  if (!FBXLoaderCtor) {
-    throw new Error("FBXLoader constructor unavailable. ensureThreeAndFBXLoader() must run first.");
-  }
   const loader = new FBXLoaderCtor();
-  let fbx;
-  try {
-    fbx = await loader.loadAsync(FBX_BASE + FILES["Neutral Idle"]);
-  } catch (err) {
-    const wrapped = new Error(`Failed to load Neutral Idle FBX: ${err?.message ?? err}`);
-    wrapped.cause = err;
-    throw wrapped;
-  }
+  const fbx = await loader.loadAsync(FBX_BASE + FILES["Neutral Idle"]);
   fbx.scale.setScalar(0.01);
   scene.add(fbx);
   model = fbx;
@@ -371,6 +319,119 @@ function disposeFallbackModel() {
   applyCameraDefaults();
 }
 
+function createFallbackModel(reason) {
+  if (usingFallback && model) {
+    return;
+  }
+  usingFallback = true;
+  if (reason) {
+    console.warn("⚠️ Falling back to procedural Bob due to:", reason);
+  }
+
+  Object.keys(cache).forEach((k) => delete cache[k]);
+  Object.keys(fallbackClips).forEach((k) => delete fallbackClips[k]);
+
+  jawBone = null;
+  fingerBones = [];
+  focusBone = null;
+
+  const cowboy = new THREE.Group();
+  cowboy.position.set(0, 0.9, 0);
+
+  const boneMaterial = new THREE.MeshStandardMaterial({ color: 0xfff2d4, roughness: 0.45, metalness: 0.05 });
+  const accentMaterial = new THREE.MeshStandardMaterial({ color: 0x87512a, roughness: 0.6, metalness: 0.1 });
+
+  const ground = new THREE.Mesh(new THREE.CircleGeometry(3.2, 40), new THREE.MeshStandardMaterial({ color: 0x1a1209, roughness: 0.9, metalness: 0.05 }));
+  ground.rotation.x = -Math.PI / 2;
+  ground.position.y = -1.4;
+  scene.add(ground);
+
+  const spine = new THREE.Mesh(new THREE.CapsuleGeometry(0.22, 1.2, 4, 16), boneMaterial);
+  spine.position.y = 0.5;
+  cowboy.add(spine);
+
+  const pelvis = new THREE.Mesh(new THREE.CapsuleGeometry(0.28, 0.4, 4, 12), boneMaterial);
+  pelvis.position.y = -0.1;
+  cowboy.add(pelvis);
+
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.28, 20, 20), boneMaterial);
+  head.position.y = 1.2;
+  cowboy.add(head);
+
+  const jaw = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.15, 0.2), boneMaterial);
+  jaw.position.set(0, 1.0, 0.08);
+  cowboy.add(jaw);
+
+  const hatBrim = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.42, 0.05, 24), accentMaterial);
+  hatBrim.position.y = 1.37;
+  cowboy.add(hatBrim);
+
+  const hatTop = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.28, 0.28, 24), accentMaterial);
+  hatTop.position.y = 1.5;
+  cowboy.add(hatTop);
+
+  const leftArm = new THREE.Mesh(new THREE.CapsuleGeometry(0.12, 0.7, 4, 12), boneMaterial);
+  leftArm.position.set(-0.45, 0.55, 0);
+  leftArm.rotation.z = Math.PI / 4;
+  cowboy.add(leftArm);
+
+  const rightArm = leftArm.clone();
+  rightArm.position.x = 0.45;
+  rightArm.rotation.z = -Math.PI / 4;
+  cowboy.add(rightArm);
+
+  const leftLeg = new THREE.Mesh(new THREE.CapsuleGeometry(0.14, 0.9, 4, 12), boneMaterial);
+  leftLeg.position.set(-0.18, -0.85, 0);
+  cowboy.add(leftLeg);
+
+  const rightLeg = leftLeg.clone();
+  rightLeg.position.x = 0.18;
+  cowboy.add(rightLeg);
+
+  const spur = new THREE.Mesh(new THREE.TorusGeometry(0.18, 0.04, 12, 24), accentMaterial);
+  spur.rotation.x = Math.PI / 2;
+  spur.position.set(-0.18, -1.3, -0.12);
+  cowboy.add(spur);
+  const spur2 = spur.clone();
+  spur2.position.x = 0.18;
+  cowboy.add(spur2);
+
+  scene.add(cowboy);
+  model = cowboy;
+  mixer = new THREE.AnimationMixer(model);
+
+  const idleYawTrack = new THREE.NumberKeyframeTrack(".rotation[y]", [0, 2.5, 5], [-0.12, 0.12, -0.12]);
+  const idleBobTrack = new THREE.NumberKeyframeTrack(".position[y]", [0, 2.5, 5], [0, 0.07, 0]);
+  fallbackClips["Neutral Idle"] = new THREE.AnimationClip("Neutral Idle", 5, [idleYawTrack, idleBobTrack]);
+
+  const breatheScale = new THREE.NumberKeyframeTrack(".scale[y]", [0, 1.2, 2.4], [1, 1.05, 1]);
+  fallbackClips["Breathing Idle"] = new THREE.AnimationClip("Breathing Idle", 2.4, [breatheScale]);
+
+  const lookAroundYaw = new THREE.NumberKeyframeTrack(".rotation[y]", [0, 1, 2, 3], [-0.35, 0.25, 0.35, -0.35]);
+  const lookAroundPitch = new THREE.NumberKeyframeTrack(".rotation[x]", [0, 1.5, 3], [0.03, -0.04, 0.03]);
+  fallbackClips["Looking Around"] = new THREE.AnimationClip("Looking Around", 3, [lookAroundYaw, lookAroundPitch]);
+
+  const talkingTrack = new THREE.NumberKeyframeTrack(".rotation[x]", [0, 0.2, 0.4, 0.6], [0, -0.08, 0.08, 0]);
+  fallbackClips["Talking"] = new THREE.AnimationClip("Talking", 0.6, [talkingTrack]);
+
+  const sleepingTrack = new THREE.NumberKeyframeTrack(".rotation[x]", [0, 1.5, 3], [0, 0.5, 0]);
+  fallbackClips["Sleeping Idle"] = new THREE.AnimationClip("Sleeping Idle", 3, [sleepingTrack]);
+
+  const wakingTrack = new THREE.NumberKeyframeTrack(".rotation[x]", [0, 0.4, 0.8], [0.5, 0.1, 0]);
+  fallbackClips["Waking"] = new THREE.AnimationClip("Waking", 0.8, [wakingTrack]);
+
+  const boredTrack = new THREE.NumberKeyframeTrack(".position[y]", [0, 1.5, 3], [0, -0.08, 0]);
+  fallbackClips["Bored"] = new THREE.AnimationClip("Bored", 3, [boredTrack]);
+
+  const sillyYaw = new THREE.NumberKeyframeTrack(".rotation[y]", [0, 0.4, 0.8, 1.2, 1.6], [0, 0.6, -0.6, 0.6, 0]);
+  const sillyPos = new THREE.NumberKeyframeTrack(".position[x]", [0, 0.4, 0.8, 1.2, 1.6], [0, 0.4, -0.4, 0.4, 0]);
+  fallbackClips["Silly Dancing"] = new THREE.AnimationClip("Silly Dancing", 1.6, [sillyYaw, sillyPos]);
+
+  cache["Neutral Idle"] = fallbackClips["Neutral Idle"];
+  cam.target = new THREE.Vector3(0, 1.1, 0);
+  setStatus("⚠️ Loaded fallback Bob. Animations simplified while original assets are unavailable.");
+}
+
 /////////////////////////////////////////////////////
 // ANIMATION
 /////////////////////////////////////////////////////
@@ -380,18 +441,8 @@ async function loadClip(name) {
     return fallbackClips[name] ?? fallbackClips["Neutral Idle"] ?? null;
   }
   if (cache[name]) return cache[name];
-  if (!FBXLoaderCtor) {
-    throw new Error("FBXLoader constructor unavailable. ensureThreeAndFBXLoader() must run first.");
-  }
   const loader = new FBXLoaderCtor();
-  let fbx;
-  try {
-    fbx = await loader.loadAsync(FBX_BASE + FILES[name]);
-  } catch (err) {
-    const wrapped = new Error(`Failed to load FBX clip "${name}": ${err?.message ?? err}`);
-    wrapped.cause = err;
-    throw wrapped;
-  }
+  const fbx = await loader.loadAsync(FBX_BASE + FILES[name]);
   const clip = fbx.animations[0];
   cache[name] = clip;
   return clip;
@@ -503,8 +554,28 @@ async function randomIdle() {
 /////////////////////////////////////////////////////
 async function boot() {
   setStatus("Initializing Bob...");
-  const loaderAvailable = await ensureThreeAndFBXLoader();
+  await ensureThreeAndFBXLoader();
   initThree();
+
+  if (!loaderAvailable) {
+    if (typeof globalScope.THREE === "undefined") {
+      throw new Error("THREE.js failed to load; cannot render Bob or fallback geometry.");
+    }
+    createFallbackModel(new Error("Missing THREE or FBXLoader"));
+  } else {
+    try {
+      await loadModel();
+    } catch (err) {
+      console.error(err);
+      createFallbackModel(err);
+    }
+  }
+
+  if (!model) {
+    throw new Error("Failed to initialize Bob model.");
+  }
+
+  await play("Neutral Idle");
   animate();
 
   let neutralClip = null;
@@ -545,6 +616,5 @@ async function boot() {
 }
 boot().catch((err) => {
   console.error(err);
-  const msg = err?.message ? `❌ ${err.message}` : "❌ Failed to load Bob. Check console for details.";
-  setStatus(msg);
+  setStatus("❌ Failed to load Bob. Check console for details.");
 });
