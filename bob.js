@@ -1,4 +1,4 @@
-console.log("🟢 Booting Bob (v5.9 — Final Texture Color Fix)…");
+console.log("🟢 Booting Bob (v6.0 — Final Cowboy Edition)…");
 
 // ---------- CONFIG ----------
 const WORKER_URL = "https://ghostaiv1.alexmkennell.workers.dev";
@@ -20,7 +20,7 @@ const cache={};
 // ---------- GLOBALS ----------
 let scene,camera,renderer,clock,mixer,model,currentAction;
 let state="boot";
-const cam={radius:3,yaw:0,pitch:0.4,drift:false,target:new THREE.Vector3(0,1,0)};
+const cam={radius:3.5,yaw:0,pitch:0.4,drift:false,target:new THREE.Vector3(0,1,0)};
 
 // ---------- INIT ----------
 function initThree(){
@@ -31,15 +31,17 @@ function initThree(){
 
   scene=new THREE.Scene();
   camera=new THREE.PerspectiveCamera(45,window.innerWidth/window.innerHeight,0.1,100);
-  camera.position.set(0,1.6,3);
+  camera.position.set(0,1.6,4);
 
-  // Softer realistic lighting
-  const hemi=new THREE.HemisphereLight(0xffffff,0x444444,0.5);
-  const key =new THREE.DirectionalLight(0xffffff,0.4);
+  // Soft 3-point lighting setup
+  const hemi=new THREE.HemisphereLight(0xffffff,0x444444,0.45);
+  const key =new THREE.DirectionalLight(0xffffff,0.55);
   key.position.set(2,4,3);
   const fill=new THREE.DirectionalLight(0xffffff,0.25);
   fill.position.set(-2,2,-2);
-  scene.add(hemi,key,fill);
+  const rim =new THREE.DirectionalLight(0xffffff,0.3);
+  rim.position.set(0,3,-3);
+  scene.add(hemi,key,fill,rim);
 
   clock=new THREE.Clock();
   window.addEventListener("resize",()=>{
@@ -54,38 +56,42 @@ function initThree(){
 }
 
 // ---------- MODEL LOAD ----------
-async function loadModel() {
-  const mtlLoader = new THREE.MTLLoader();
-  const materials = await new Promise((resolve, reject) => {
-    mtlLoader.load(
-      FBX_BASE + "Boney_Bob_the_skeleto_1017235951_texture.mtl",
-      (mtl) => {
-        mtl.preload();
-        resolve(mtl);
-      },
-      undefined,
-      reject
-    );
+async function loadModel(){
+  const loader=new FBXLoader();
+
+  // 🎯 Load base rig (your mesh only)
+  const fbx=await loader.loadAsync(FBX_BASE+"T-Pose.fbx");
+  fbx.scale.setScalar(0.01); // Mixamo FBXs are huge; scale down
+  fbx.position.set(0,0,0);
+  scene.add(fbx);
+  model=fbx;
+
+  // 🖌 Load and apply texture properly
+  const tex=await new THREE.TextureLoader().loadAsync(TEX_URL);
+  tex.flipY=false;
+  tex.colorSpace = THREE.SRGBColorSpace;
+
+  fbx.traverse(o=>{
+    if(o.isMesh){
+      o.material = new THREE.MeshLambertMaterial({
+        map: tex,
+        color: 0xffffff,
+        side: THREE.DoubleSide
+      });
+      o.material.needsUpdate=true;
+    }
   });
 
-  const fbxLoader = new FBXLoader();
-  fbxLoader.setMaterials(materials);
-  const fbx = await fbxLoader.loadAsync(FBX_BASE + "Neutral Idle.fbx");
+  mixer=new THREE.AnimationMixer(model);
 
-  fbx.scale.setScalar(1);
-  fbx.position.set(0, 0, 0);
-  scene.add(fbx);
-  model = fbx;
-
-  mixer = new THREE.AnimationMixer(model);
-
-  const box = new THREE.Box3().setFromObject(model);
-  const size = box.getSize(new THREE.Vector3()).length();
-  const center = box.getCenter(new THREE.Vector3());
-  camera.position.copy(center.clone().add(new THREE.Vector3(size / 2, size / 3, size / 2)));
+  // Auto-fit camera
+  const box=new THREE.Box3().setFromObject(model);
+  const size=box.getSize(new THREE.Vector3()).length();
+  const center=box.getCenter(new THREE.Vector3());
+  camera.position.copy(center.clone().add(new THREE.Vector3(size/1.5,size/2.5,size/1.5)));
   camera.lookAt(center);
 
-  return model.animations?.[0] ?? null;
+  return model;
 }
 
 // ---------- ANIMATION ----------
@@ -136,10 +142,15 @@ async function boot(){
   setStatus("Initializing Bob...");
   initThree();
 
-  try{ await loadModel(); }
-  catch(err){ console.error(err); setStatus("⚠️ Failed to load FBX."); return; }
+  try{
+    await loadModel();
+    await play("Neutral Idle");
+  } catch(err){
+    console.error(err);
+    setStatus("⚠️ Failed to load FBX or animation.");
+    return;
+  }
 
-  await play("Neutral Idle");
   animate();
   state="idle";
   setStatus("👂 Listening...");
