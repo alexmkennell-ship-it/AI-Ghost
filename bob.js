@@ -13,40 +13,22 @@ const TEX_URL = `${FBX_BASE}Boney_Bob_the_skeleto_1017235951_texture.png`;
 /////////////////////////////////////////////////////
 // VERIFY GLOBALS
 /////////////////////////////////////////////////////
-const globalScope = typeof window !== "undefined" ? window : globalThis;
-let FBXLoaderCtor = null;
-let usingFallback = false;
-const fallbackClips = {};
-
-async function ensureThreeAndFBXLoader() {
-  const start = (globalScope.performance?.now?.() ?? Date.now());
-  const timeoutMs = 5000;
-  while (true) {
-    const hasThree = typeof globalScope.THREE !== "undefined";
-    const loaderCandidate = hasThree && typeof globalScope.THREE.FBXLoader === "function"
-      ? globalScope.THREE.FBXLoader
-      : typeof globalScope.FBXLoader === "function"
-        ? globalScope.FBXLoader
-        : null;
-
-    if (hasThree && loaderCandidate) {
-      if (!globalScope.THREE.FBXLoader) {
-        globalScope.THREE.FBXLoader = loaderCandidate;
-      }
-      FBXLoaderCtor = loaderCandidate;
-      console.log("✅ THREE.js + FBXLoader detected.");
-      return true;
-    }
-
-    const elapsed = (globalScope.performance?.now?.() ?? Date.now()) - start;
-    if (elapsed > timeoutMs) {
-      console.error("❌ THREE.js or FBXLoader not loaded globally. Check script order in HTML.");
-      return false;
-    }
-
-    await new Promise((resolve) => setTimeout(resolve, 50));
-  }
+if (typeof THREE === "undefined" || typeof THREE.FBXLoader === "undefined") {
+  console.error("❌ THREE.js or FBXLoader not loaded globally. Check script order in HTML.");
+  throw new Error("Missing THREE or FBXLoader");
 }
+
+const FBXLoader = hasFBXOnThree
+  ? globalScope.THREE.FBXLoader
+  : globalScope.FBXLoader;
+
+if (!hasFBXOnThree && hasGlobalFBX) {
+  globalScope.THREE.FBXLoader = FBXLoader;
+}
+
+console.log("✅ THREE.js + FBXLoader detected.");
+
+const FBXLoader = THREE.FBXLoader;
 
 /////////////////////////////////////////////////////
 // UTILITIES
@@ -113,18 +95,8 @@ function initThree() {
 // MODEL LOADING
 /////////////////////////////////////////////////////
 async function loadModel() {
-  if (!FBXLoaderCtor) {
-    throw new Error("FBXLoader constructor unavailable. ensureThreeAndFBXLoader() must run first.");
-  }
   const loader = new FBXLoaderCtor();
-  let fbx;
-  try {
-    fbx = await loader.loadAsync(FBX_BASE + FILES["Neutral Idle"]);
-  } catch (err) {
-    const wrapped = new Error(`Failed to load Neutral Idle FBX: ${err?.message ?? err}`);
-    wrapped.cause = err;
-    throw wrapped;
-  }
+  const fbx = await loader.loadAsync(FBX_BASE + FILES["Neutral Idle"]);
   fbx.scale.setScalar(0.01);
   scene.add(fbx);
   model = fbx;
@@ -275,18 +247,8 @@ async function loadClip(name) {
     return fallbackClips[name] ?? fallbackClips["Neutral Idle"] ?? null;
   }
   if (cache[name]) return cache[name];
-  if (!FBXLoaderCtor) {
-    throw new Error("FBXLoader constructor unavailable. ensureThreeAndFBXLoader() must run first.");
-  }
   const loader = new FBXLoaderCtor();
-  let fbx;
-  try {
-    fbx = await loader.loadAsync(FBX_BASE + FILES[name]);
-  } catch (err) {
-    const wrapped = new Error(`Failed to load FBX clip "${name}": ${err?.message ?? err}`);
-    wrapped.cause = err;
-    throw wrapped;
-  }
+  const fbx = await loader.loadAsync(FBX_BASE + FILES[name]);
   const clip = fbx.animations[0];
   cache[name] = clip;
   return clip;
@@ -398,7 +360,7 @@ async function randomIdle() {
 /////////////////////////////////////////////////////
 async function boot() {
   setStatus("Initializing Bob...");
-  const loaderAvailable = await ensureThreeAndFBXLoader();
+  await ensureThreeAndFBXLoader();
   initThree();
 
   if (!loaderAvailable) {
@@ -431,6 +393,5 @@ async function boot() {
 }
 boot().catch((err) => {
   console.error(err);
-  const msg = err?.message ? `❌ ${err.message}` : "❌ Failed to load Bob. Check console for details.";
-  setStatus(msg);
+  setStatus("❌ Failed to load Bob. Check console for details.");
 });
