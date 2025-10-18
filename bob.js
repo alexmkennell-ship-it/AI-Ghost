@@ -1,11 +1,11 @@
-console.log("🟢 Booting Bob (v5.5 GitHub Edition)…");
+console.log("🟢 Booting Bob (v5.6 Texture Fix)…");
 
 // ---------- CONFIG ----------
 const WORKER_URL = "https://ghostaiv1.alexmkennell.workers.dev";
 const FBX_BASE   = "https://pub-30bcc0b2a7044074a19efdef19f69857.r2.dev/models/";
 const TEX_URL    = `${FBX_BASE}Boney_Bob_the_skeleto_1017235951_texture.png`;
 
-// ---------- FBXLoader Patch ----------
+// ---------- PATCH ----------
 if (typeof window.FBXLoader === "undefined" && window.THREE && THREE.FBXLoader) {
   window.FBXLoader = THREE.FBXLoader;
   console.log("🧩 FBXLoader patched to global scope.");
@@ -20,9 +20,9 @@ const pick = (a)=>a[Math.floor(Math.random()*a.length)];
 
 // ---------- GLOBALS ----------
 let scene,camera,renderer,clock,mixer,model,currentAction;
-let state="boot",usingFallback=false;
+let state="boot";
 const cam={radius:3,yaw:0,pitch:0.4,drift:false,target:new THREE.Vector3(0,1,0)};
-const fallbackClips={},cache={};
+const cache={};
 
 // ---------- INIT ----------
 function initThree(){
@@ -34,10 +34,12 @@ function initThree(){
   camera=new THREE.PerspectiveCamera(45,window.innerWidth/window.innerHeight,0.1,100);
   camera.position.set(0,1.6,3);
 
-  const hemi=new THREE.HemisphereLight(0xffffff,0x444444,0.9);
-  const dir=new THREE.DirectionalLight(0xffffff,0.8);
-  dir.position.set(2,4,3);
-  scene.add(hemi,dir);
+  const hemi=new THREE.HemisphereLight(0xffffff,0x444444,0.7);
+  const key =new THREE.DirectionalLight(0xffffff,0.8);
+  key.position.set(2,4,3);
+  const fill=new THREE.DirectionalLight(0xffffff,0.3);
+  fill.position.set(-2,2,-2);
+  scene.add(hemi,key,fill);
 
   clock=new THREE.Clock();
   window.addEventListener("resize",()=>{
@@ -46,7 +48,7 @@ function initThree(){
     renderer.setSize(window.innerWidth,window.innerHeight);
   });
 
-  // optional orbit controls
+  // Optional orbit controls
   const controls=new THREE.OrbitControls(camera,renderer.domElement);
   controls.target.copy(cam.target);
   controls.update();
@@ -56,17 +58,22 @@ function initThree(){
 async function loadModel(){
   const loader=new FBXLoader();
   const fbx=await loader.loadAsync(FBX_BASE+"Neutral Idle.fbx");
-  fbx.scale.setScalar(1);            // correct size
+  fbx.scale.setScalar(1);
   fbx.position.set(0,0,0);
   scene.add(fbx);
   model=fbx;
 
+  // --- Texture fix ---
   const tex=await new THREE.TextureLoader().loadAsync(TEX_URL);
   tex.flipY=false;
 
   fbx.traverse(o=>{
     if(o.isMesh){
       o.material.map=tex;
+      o.material.color.set(0xffffff);   // no tint
+      o.material.metalness=0.0;         // not shiny
+      o.material.roughness=1.0;         // matte surface
+      o.material.envMapIntensity=0.4;   // slight reflection
       o.material.needsUpdate=true;
     }
   });
