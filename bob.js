@@ -1,11 +1,26 @@
-console.log("🤠 Booting Bob (v6.4 — Real Cowboy Mode)…");
+console.log("🤠 Booting Bob (v6.4-safe — Real Cowboy Mode)…");
 
 const FBX_BASE = "https://pub-30bcc0b2a7044074a19efdef19f69857.r2.dev/models/";
 const BASE_RIG = "T-Pose.fbx";
 const START_ANIM = "Neutral Idle";
 
 let scene, camera, renderer, mixer, rigRoot;
-const clock = new THREE.Clock();
+let clock;
+
+// ---------- wait for THREE + FBXLoader ----------
+async function waitForGlobals() {
+  let tries = 0;
+  while (tries++ < 80) {
+    if (window.THREE && (window.FBXLoader || (window.THREE && THREE.FBXLoader))) {
+      if (!window.FBXLoader && window.THREE.FBXLoader)
+        window.FBXLoader = THREE.FBXLoader;
+      console.log("✅ THREE + FBXLoader ready.");
+      return;
+    }
+    await new Promise(r => setTimeout(r, 200));
+  }
+  throw new Error("❌ FBXLoader never became available.");
+}
 
 // ---------- materials ----------
 const MAT = {
@@ -54,6 +69,8 @@ function initThree() {
   ground.rotation.x = -Math.PI / 2;
   ground.position.y = -1;
   scene.add(ground);
+
+  clock = new THREE.Clock();
 }
 
 // ---------- build cowboy ----------
@@ -75,7 +92,6 @@ function buildCowboy(rig) {
   const lFoot = findBone(rig, "LeftFoot");
   const rFoot = findBone(rig, "RightFoot");
 
-  // head
   if (head) {
     const skull = new THREE.Mesh(new THREE.SphereGeometry(0.1, 24, 24), MAT.bone);
     attach(head, skull, { y: 0.1 });
@@ -93,17 +109,9 @@ function buildCowboy(rig) {
     attach(head, eyeL, { x: -0.035, y: 0.03, z: 0.07 });
   }
 
-  // torso
-  if (spine) {
-    const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.12, 0.25, 8, 16), MAT.shirt);
-    attach(spine, torso, { y: 0.1 });
-  }
-  if (spine2) {
-    const bib = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.25, 0.06), MAT.denim);
-    attach(spine2, bib, { y: 0.05, z: 0.05 });
-  }
+  if (spine) attach(spine, new THREE.Mesh(new THREE.CapsuleGeometry(0.12, 0.25), MAT.shirt), { y: 0.1 });
+  if (spine2) attach(spine2, new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.25, 0.06), MAT.denim), { y: 0.05, z: 0.05 });
 
-  // arms
   const makeArm = (upper, lower, hand) => {
     if (upper) attach(upper, new THREE.Mesh(new THREE.CapsuleGeometry(0.04, 0.18), MAT.shirt), { y: -0.09 });
     if (lower) attach(lower, new THREE.Mesh(new THREE.CapsuleGeometry(0.035, 0.16), MAT.bone), { y: -0.08 });
@@ -112,7 +120,6 @@ function buildCowboy(rig) {
   makeArm(lArm, lFore, lHand);
   makeArm(rArm, rFore, rHand);
 
-  // legs
   const makeLeg = (upper, lower, foot) => {
     if (upper) attach(upper, new THREE.Mesh(new THREE.CapsuleGeometry(0.055, 0.20), MAT.denim), { y: -0.1 });
     if (lower) attach(lower, new THREE.Mesh(new THREE.CapsuleGeometry(0.045, 0.18), MAT.denim), { y: -0.09 });
@@ -132,7 +139,6 @@ async function loadRig() {
   rigRoot = rig;
   buildCowboy(rigRoot);
 
-  // frame camera
   const box = new THREE.Box3().setFromObject(rigRoot);
   const center = box.getCenter(new THREE.Vector3());
   camera.position.set(center.x, center.y + 0.3, center.z + 2.8);
@@ -165,7 +171,7 @@ function animate() {
 // ---------- boot ----------
 (async () => {
   document.getElementById("status").textContent = "Loading Bob...";
-  await new Promise(r => setTimeout(r, 200)); // small delay to ensure THREE ready
+  await waitForGlobals();
   initThree();
   await loadRig();
   await play(START_ANIM);
