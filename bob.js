@@ -13,12 +13,14 @@ const TEX_URL = `${FBX_BASE}Boney_Bob_the_skeleto_1017235951_texture.png`;
 /////////////////////////////////////////////////////
 // VERIFY GLOBALS
 /////////////////////////////////////////////////////
-if (typeof THREE === "undefined" || typeof FBXLoader === "undefined") {
+if (typeof THREE === "undefined" || typeof THREE.FBXLoader === "undefined") {
   console.error("❌ THREE.js or FBXLoader not loaded globally. Check script order in HTML.");
   throw new Error("Missing THREE or FBXLoader");
 }
 
 console.log("✅ THREE.js + FBXLoader detected.");
+
+const FBXLoader = THREE.FBXLoader;
 
 /////////////////////////////////////////////////////
 // UTILITIES
