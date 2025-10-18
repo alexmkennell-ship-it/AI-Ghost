@@ -1,12 +1,15 @@
-// 🟢 Bob v8.3 — Real Cowboy Render Edition
+// 🟢 Bob v8.4 — Real Cowboy Render + Stable Loader
+
+import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.155.0/build/three.module.js";
+import { FBXLoader } from "https://cdn.jsdelivr.net/npm/three@0.155.0/examples/jsm/loaders/FBXLoader.js";
+import { OrbitControls } from "https://cdn.jsdelivr.net/npm/three@0.155.0/examples/jsm/controls/OrbitControls.js";
 
 const WORKER_URL = "https://ghostaiv1.alexmkennell.workers.dev";
 const FBX_BASE = "https://pub-30bcc0b2a7044074a19efdef19f69857.r2.dev/models/";
 const TEXTURE_URL = `${FBX_BASE}Boney_Bob_the_skeleto_1017235951_texture.png`;
 
 let scene, camera, renderer, clock, mixer, model, currentAction;
-let isSpeaking = false;
-let asleep = false;
+let recognition, asleep = false, isSpeaking = false;
 
 // ---------- SETUP ----------
 function initThree() {
@@ -19,15 +22,20 @@ function initThree() {
   camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
   camera.position.set(0, 1.6, 4);
 
-  // Lighting
-  const hemi = new THREE.HemisphereLight(0xffffff, 0x444444, 0.6);
-  const key = new THREE.DirectionalLight(0xffffff, 0.65);
+  // Lights
+  const hemi = new THREE.HemisphereLight(0xffffff, 0x444444, 0.65);
+  const key = new THREE.DirectionalLight(0xffffff, 0.75);
   key.position.set(2, 4, 3);
-  const fill = new THREE.DirectionalLight(0xffffff, 0.3);
+  const fill = new THREE.DirectionalLight(0xffffff, 0.35);
   fill.position.set(-2, 2, -2);
   const rim = new THREE.DirectionalLight(0xffffff, 0.4);
   rim.position.set(0, 3, -3);
   scene.add(hemi, key, fill, rim);
+
+  const controls = new OrbitControls(camera, renderer.domElement);
+  controls.enableZoom = false;
+  controls.enablePan = false;
+  controls.update();
 
   clock = new THREE.Clock();
   window.addEventListener("resize", () => {
@@ -38,19 +46,19 @@ function initThree() {
 }
 
 // ---------- TEXTURE ----------
-async function applyOriginalTexture(fbx) {
+async function applyTexture(fbx) {
   const loader = new THREE.TextureLoader();
-  const texture = await loader.loadAsync(TEXTURE_URL);
-  texture.flipY = false;
-  texture.colorSpace = THREE.SRGBColorSpace;
+  const tex = await loader.loadAsync(TEXTURE_URL);
+  tex.flipY = false;
+  tex.colorSpace = THREE.SRGBColorSpace;
 
   fbx.traverse(o => {
     if (o.isMesh) {
       o.material = new THREE.MeshStandardMaterial({
-        map: texture,
+        map: tex,
         metalness: 0.25,
         roughness: 0.55,
-        envMapIntensity: 0.75,
+        envMapIntensity: 0.8,
         emissive: o.name.toLowerCase().includes("eye")
           ? new THREE.Color(0x00ff66)
           : new THREE.Color(0x000000),
@@ -61,7 +69,7 @@ async function applyOriginalTexture(fbx) {
   });
 }
 
-// ---------- MODEL LOAD ----------
+// ---------- MODEL ----------
 async function loadRig() {
   const loader = new FBXLoader();
   const fbx = await loader.loadAsync(FBX_BASE + "T-Pose.fbx");
@@ -69,19 +77,16 @@ async function loadRig() {
   fbx.position.set(0, 0, 0);
   scene.add(fbx);
   model = fbx;
-  await applyOriginalTexture(fbx);
+  await applyTexture(fbx);
 
   mixer = new THREE.AnimationMixer(model);
-
   const box = new THREE.Box3().setFromObject(model);
-  const size = box.getSize(new THREE.Vector3()).length();
   const center = box.getCenter(new THREE.Vector3());
-  camera.position.copy(center.clone().add(new THREE.Vector3(size / 1.5, size / 2.5, size / 1.5)));
   camera.lookAt(center);
   return model;
 }
 
-// ---------- ANIMATION ----------
+// ---------- ANIMATIONS ----------
 const cache = {};
 async function loadClip(name) {
   if (cache[name]) return cache[name];
@@ -110,6 +115,7 @@ async function say(text) {
   if (isSpeaking) return;
   isSpeaking = true;
   try {
+    recognition.stop();
     const resp = await fetch(`${WORKER_URL}/tts`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -120,17 +126,15 @@ async function say(text) {
     const audio = new Audio(url);
     audio.onended = () => {
       isSpeaking = false;
-      recognition.start(); // resume listening
+      recognition.start();
     };
-    recognition.stop(); // mute mic while speaking
     await audio.play();
   } catch (err) {
-    console.warn("⚠️ /tts failed:", err);
+    console.warn("⚠️ TTS failed:", err);
     isSpeaking = false;
   }
 }
 
-// ---------- CHAT ----------
 async function askBob(prompt) {
   const resp = await fetch(WORKER_URL, {
     method: "POST",
@@ -143,35 +147,34 @@ async function askBob(prompt) {
   await say(reply);
 }
 
-// ---------- MIC ----------
-let recognition;
+// ---------- SPEECH RECOGNITION ----------
 function initSpeech() {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   recognition = new SR();
   recognition.continuous = true;
-  recognition.interimResults = false;
   recognition.lang = "en-US";
 
   recognition.onresult = e => {
-    const t = e.results[e.results.length - 1][0].transcript.trim().toLowerCase();
-    console.log("🗣️ You said:", t);
-    if (t.includes("hey bob") && asleep) {
+    const text = e.results[e.results.length - 1][0].transcript.trim().toLowerCase();
+    console.log("🗣️ You said:", text);
+    if (text.includes("hey bob") && asleep) {
       asleep = false;
       play("Neutral Idle");
       say("Mornin’, partner. You woke me up from a dead nap!");
       return;
     }
-    if (!asleep && !isSpeaking) askBob(t);
+    if (!asleep && !isSpeaking) askBob(text);
   };
 
   recognition.onend = () => {
     if (!isSpeaking) recognition.start();
   };
+
   recognition.start();
   console.log("🟢 Bob: Listening...");
 }
 
-// ---------- CAMERA LOOP ----------
+// ---------- ANIMATION LOOP ----------
 function animate() {
   requestAnimationFrame(animate);
   const dt = clock.getDelta();
@@ -181,7 +184,7 @@ function animate() {
 
 // ---------- BOOT ----------
 (async () => {
-  console.log("🟢 Bob v8.3 init");
+  console.log("🟢 Bob v8.4 init");
   try {
     initThree();
     await loadRig();
@@ -191,7 +194,7 @@ function animate() {
       "click",
       () => {
         if (!recognition) initSpeech();
-        else console.log("🎤 Mic ready!");
+        console.log("🎤 Mic activated");
       },
       { once: true }
     );
