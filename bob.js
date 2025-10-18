@@ -13,12 +13,38 @@ const TEX_URL = `${FBX_BASE}Boney_Bob_the_skeleto_1017235951_texture.png`;
 /////////////////////////////////////////////////////
 // VERIFY GLOBALS
 /////////////////////////////////////////////////////
-if (typeof THREE === "undefined" || typeof FBXLoader === "undefined") {
-  console.error("❌ THREE.js or FBXLoader not loaded globally. Check script order in HTML.");
-  throw new Error("Missing THREE or FBXLoader");
-}
+const globalScope = typeof window !== "undefined" ? window : globalThis;
+let FBXLoaderCtor = null;
 
-console.log("✅ THREE.js + FBXLoader detected.");
+async function ensureThreeAndFBXLoader() {
+  const start = (globalScope.performance?.now?.() ?? Date.now());
+  const timeoutMs = 5000;
+  while (true) {
+    const hasThree = typeof globalScope.THREE !== "undefined";
+    const loaderCandidate = hasThree && typeof globalScope.THREE.FBXLoader === "function"
+      ? globalScope.THREE.FBXLoader
+      : typeof globalScope.FBXLoader === "function"
+        ? globalScope.FBXLoader
+        : null;
+
+    if (hasThree && loaderCandidate) {
+      if (!globalScope.THREE.FBXLoader) {
+        globalScope.THREE.FBXLoader = loaderCandidate;
+      }
+      FBXLoaderCtor = loaderCandidate;
+      console.log("✅ THREE.js + FBXLoader detected.");
+      return;
+    }
+
+    const elapsed = (globalScope.performance?.now?.() ?? Date.now()) - start;
+    if (elapsed > timeoutMs) {
+      console.error("❌ THREE.js or FBXLoader not loaded globally. Check script order in HTML.");
+      throw new Error("Missing THREE or FBXLoader");
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+}
 
 /////////////////////////////////////////////////////
 // UTILITIES
@@ -35,7 +61,7 @@ let scene, camera, renderer, clock, mixer;
 let model, currentAction = null;
 let jawBone = null, fingerBones = [], focusBone = null;
 let state = "boot", micLocked = false;
-let cam = { radius: 5.8, yaw: 0, pitch: 1.308996939, drift: true, target: new THREE.Vector3(0, 1.2, 0) };
+let cam = { radius: 5.8, yaw: 0, pitch: 1.308996939, drift: true, target: null };
 
 /////////////////////////////////////////////////////
 // FILE MAP
@@ -55,6 +81,9 @@ const FILES = {
 // INIT
 /////////////////////////////////////////////////////
 function initThree() {
+  if (!cam.target) {
+    cam.target = new THREE.Vector3(0, 1.2, 0);
+  }
   renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
   renderer.setSize(window.innerWidth, window.innerHeight);
   document.body.appendChild(renderer.domElement);
@@ -82,7 +111,10 @@ function initThree() {
 // MODEL LOADING
 /////////////////////////////////////////////////////
 async function loadModel() {
-  const loader = new FBXLoader();
+  if (!FBXLoaderCtor) {
+    throw new Error("FBXLoader constructor unavailable. ensureThreeAndFBXLoader() must run first.");
+  }
+  const loader = new FBXLoaderCtor();
   const fbx = await loader.loadAsync(FBX_BASE + FILES["Neutral Idle"]);
   fbx.scale.setScalar(0.01);
   scene.add(fbx);
@@ -109,7 +141,10 @@ async function loadModel() {
 const cache = {};
 async function loadClip(name) {
   if (cache[name]) return cache[name];
-  const loader = new FBXLoader();
+  if (!FBXLoaderCtor) {
+    throw new Error("FBXLoader constructor unavailable. ensureThreeAndFBXLoader() must run first.");
+  }
+  const loader = new FBXLoaderCtor();
   const fbx = await loader.loadAsync(FBX_BASE + FILES[name]);
   const clip = fbx.animations[0];
   cache[name] = clip;
@@ -218,6 +253,7 @@ async function randomIdle() {
 /////////////////////////////////////////////////////
 async function boot() {
   setStatus("Initializing Bob...");
+  await ensureThreeAndFBXLoader();
   initThree();
   await loadModel();
   await play("Neutral Idle");
@@ -226,4 +262,7 @@ async function boot() {
   setStatus("👂 Listening...");
   randomIdle();
 }
-boot();
+boot().catch((err) => {
+  console.error(err);
+  setStatus("❌ Failed to load Bob. Check console for details.");
+});
