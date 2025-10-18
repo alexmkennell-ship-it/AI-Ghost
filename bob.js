@@ -94,7 +94,7 @@ function initThree() {
 async function loadModel() {
   const loader = new FBXLoader();
   const fbx = await loader.loadAsync(FBX_BASE + FILES["Neutral Idle"]);
-  fbx.scale.setScalar(0.01);
+  fbx.scale.setScalar(1); // full size
   scene.add(fbx);
   model = fbx;
 
