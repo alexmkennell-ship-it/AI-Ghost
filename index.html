@@ -4,7 +4,6 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Bob the Bone Cowboy</title>
-  <script type="module" src="https://unpkg.com/@google/model-viewer/dist/model-viewer.min.js"></script>
   <style>
     :root { --fade-ms: 360ms; }
     html, body {
@@ -15,25 +14,6 @@
       font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
       overflow: hidden;
     }
-    .stage {
-      position: relative;
-      width: 100vw;
-      height: 90vh;
-    }
-  /* Sequential fade: the incoming model isn't visible until old one finishes fading out */
-model-viewer {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  opacity: 0;
-  transition: opacity 0.6s ease-in-out; /* keep in sync with blendMs */
-  will-change: opacity;
-}
-model-viewer.active { opacity: 1; z-index: 2; }
-
-
-
     #status {
       height: 10vh;
       display: grid;
@@ -45,15 +25,7 @@ model-viewer.active { opacity: 1; z-index: 2; }
   </style>
 </head>
 <body>
-  <div class="stage">
-    <model-viewer id="mvA" autoplay ar-modes="webxr scene-viewer quick-look" disable-tap
-      camera-controls="false" interaction-prompt="none" exposure="0.95">
-    </model-viewer>
-    <model-viewer id="mvB" autoplay ar-modes="webxr scene-viewer quick-look" disable-tap
-      camera-controls="false" interaction-prompt="none" exposure="0.95">
-    </model-viewer>
-  </div>
   <div id="status">Loading…</div>
-  <script type="module" src="./bob.js"></script>
+  <script src="./bob.js"></script>
 </body>
 </html>
