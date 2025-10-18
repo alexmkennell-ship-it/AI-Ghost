@@ -1,34 +1,40 @@
-// bob.js — v4.0.2 "FBX Personality Engine – Safe Loader Build"
-// Fixes THREE.js load timing & duplicate imports
-// Keeps all previous functionality intact: TTS, jaw motion, skits, idle/sleep logic, and camera drift.
+// bob.js — v4.0.3 “Stable FBX Personality Engine”
+// Fixes THREE.js loading, duplicate imports, and runtime import issues.
+// Safe for <script> inclusion without module specifiers.
 
 /////////////////////////////////////////////////////
-// CONFIGURATION
+// CONFIG
 /////////////////////////////////////////////////////
 const WORKER_URL = "https://ghostaiv1.alexmkennell.workers.dev";
 const FBX_BASE = "https://pub-30bcc0b2a7044074a19efdef19f69857.r2.dev/bob-animations/";
 const TEX_URL = `${FBX_BASE}Boney_Bob_the_skeleto_1017235951_texture.png`;
 
 /////////////////////////////////////////////////////
-// THREE.JS DEPENDENCIES
+// LOAD THREE.JS AND FBXLOADER SAFELY
 /////////////////////////////////////////////////////
-async function ensureThreeDeps() {
-  // Load Three.js core if not loaded
-  if (!window.THREE) {
-    const mod = await import("https://unpkg.com/three@0.160.0/build/three.module.js");
-    window.THREE = mod;
-    Object.assign(window, mod);
-  }
-  // Load FBXLoader if not loaded
-  if (!THREE.FBXLoader) {
-    const { FBXLoader } = await import("https://unpkg.com/three@0.160.0/examples/jsm/loaders/FBXLoader.js");
-    THREE.FBXLoader = FBXLoader;
-  }
+async function loadThreeJS() {
+  if (window.THREE) return;
+  await new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = "https://unpkg.com/three@0.160.0/build/three.min.js";
+    script.onload = resolve;
+    script.onerror = reject;
+    document.head.appendChild(script);
+  });
+  console.log("✅ THREE.js loaded (global)");
 }
 
-// Ensure all dependencies are ready before continuing
-await ensureThreeDeps();
-console.log("✅ THREE.js ready:", !!window.THREE, "FBXLoader:", !!THREE.FBXLoader);
+async function loadFBXLoader() {
+  if (THREE.FBXLoader) return;
+  await new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = "https://unpkg.com/three@0.160.0/examples/js/loaders/FBXLoader.js";
+    script.onload = resolve;
+    script.onerror = reject;
+    document.head.appendChild(script);
+  });
+  console.log("✅ FBXLoader loaded (global)");
+}
 
 /////////////////////////////////////////////////////
 // ANIMATION MAPS
@@ -40,22 +46,13 @@ const FILES = {
   "Bored": "Bored.fbx",
   "Sad Idle": "Sad Idle.fbx",
   "Sleeping Idle": "Sleeping Idle.fbx",
-  "Sleeping Idle (alt)": "Sleeping Idle (1).fbx",
   "Waking": "Waking.fbx",
   "Lying Down": "Lying Down.fbx",
-  "Defeated": "Defeated.fbx",
-  "Walking": "Walking.fbx",
-  "Stop Walking": "Stop Walking.fbx",
-  "Walkinglikezombie": "Walkinglikezombie.fbx",
-  "Walkingsneakily": "Walkingsneakily.fbx",
   "Talking": "Talking.fbx",
-  "Yelling": "Yelling.fbx",
-  "Yelling Out": "Yelling Out.fbx",
   "Shrugging": "Shrugging.fbx",
-  "Shaking Head No": "Shaking Head No.fbx",
   "Waving": "Waving.fbx",
   "Laughing": "Laughing.fbx",
-  "Silly Dancing": "Silly Dancing.fbx",
+  "Silly Dancing": "Silly Dancing.fbx"
 };
 
 const ANIM = {
@@ -66,63 +63,48 @@ const ANIM = {
   IDLE_SAD: "Sad Idle",
   LIE_DOWN: "Lying Down",
   SLEEP: "Sleeping Idle",
-  SLEEP_ALT: "Sleeping Idle (alt)",
   WAKE: "Waking",
-  DEFEATED: "Defeated",
-  WALK: "Walking",
-  WALK_STOP: "Stop Walking",
-  WALK_ZOMBIE: "Walkinglikezombie",
-  WALK_SNEAK: "Walkingsneakily",
   TALK: "Talking",
-  YELL: "Yelling",
-  YELL_OUT: "Yelling Out",
   SHRUG: "Shrugging",
-  NO: "Shaking Head No",
   WAVE: "Waving",
   LAUGH: "Laughing",
   DANCE_SILLY: "Silly Dancing",
 };
 
 const idlePool = [ANIM.IDLE_NEUTRAL, ANIM.IDLE_BREATH, ANIM.IDLE_LOOK, ANIM.IDLE_BORED, ANIM.IDLE_SAD];
-const talkPool = [ANIM.TALK, ANIM.SHRUG, ANIM.NO, ANIM.LAUGH];
+const talkPool = [ANIM.TALK, ANIM.SHRUG, ANIM.LAUGH];
 const funPool = [ANIM.DANCE_SILLY];
-const walkPool = [ANIM.WALK, ANIM.WALK_ZOMBIE, ANIM.WALK_SNEAK];
 
 /////////////////////////////////////////////////////
-// UTILITIES
+// UTILS
 /////////////////////////////////////////////////////
-const setStatus = (m) => { const e = document.getElementById("status"); if (e) e.textContent = m; };
-const sleepMs = (ms) => new Promise(r => setTimeout(r, ms));
-const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+const setStatus = (m) => (document.getElementById("status") || {}).textContent = m || "";
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+const pick = (a) => a[Math.floor(Math.random() * a.length)];
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 
 /////////////////////////////////////////////////////
-// THREE.JS SETUP
+// SCENE
 /////////////////////////////////////////////////////
-let scene, camera, renderer, clock, mixer;
-let baseModel, currentAction = null, clipsCache = {}, fbxCache = {};
+let scene, camera, renderer, mixer, baseModel, currentAction;
+let clock = new THREE.Clock();
 let jawBone = null, fingerBones = [], focusBone = null;
+let cam = { radius: 5.8, yaw: 0, pitch: 1.3, drift: true, target: new THREE.Vector3(0, 1.2, 0) };
 let state = "boot", micLocked = false, sleepLock = false;
-let cam = { radius: 5.8, yaw: 0, pitch: 1.308996939, drift: true, target: new THREE.Vector3(0, 1.2, 0) };
-let renderRAF = 0;
 
-async function initThree() {
+async function initScene() {
   renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.setSize(window.innerWidth, window.innerHeight);
   document.body.appendChild(renderer.domElement);
-
   scene = new THREE.Scene();
+
   camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
   camera.position.set(0, 1.6, cam.radius);
 
-  const hemi = new THREE.HemisphereLight(0xffffff, 0x444444, 0.8);
-  scene.add(hemi);
-  const key = new THREE.DirectionalLight(0xffffff, 0.8);
-  key.position.set(2, 4, 3);
-  scene.add(key);
+  const light = new THREE.DirectionalLight(0xffffff, 1);
+  light.position.set(3, 5, 2);
+  scene.add(light, new THREE.AmbientLight(0x888888));
 
-  clock = new THREE.Clock();
   window.addEventListener("resize", () => {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
@@ -131,67 +113,60 @@ async function initThree() {
 }
 
 /////////////////////////////////////////////////////
-// MODEL LOADING
+// LOAD MODEL + TEXTURE
 /////////////////////////////////////////////////////
-async function loadBaseModel() {
+async function loadModel() {
   const loader = new THREE.FBXLoader();
   const fbx = await loader.loadAsync(FBX_BASE + FILES[ANIM.IDLE_NEUTRAL]);
   fbx.scale.setScalar(0.01);
   scene.add(fbx);
   baseModel = fbx;
 
-  const tex = await new THREE.TextureLoader().loadAsync(TEX_URL);
+  const tex = new THREE.TextureLoader().load(TEX_URL);
   tex.flipY = false;
   baseModel.traverse(o => {
     if (o.isMesh) {
       o.material.map = tex;
       o.material.needsUpdate = true;
     }
-    if (o.isBone && /jaw|chin/i.test(o.name)) jawBone = o;
-    if (o.isBone && /(finger|thumb|hand|wrist)/i.test(o.name) && fingerBones.length < 10) fingerBones.push(o);
-    if (o.isBone && /head|neck|spine2/i.test(o.name) && !focusBone) focusBone = o;
+    if (/jaw|chin/i.test(o.name)) jawBone = o;
+    if (/(finger|thumb|hand|wrist)/i.test(o.name) && fingerBones.length < 10) fingerBones.push(o);
+    if (/head|neck|spine2/i.test(o.name) && !focusBone) focusBone = o;
   });
 
   mixer = new THREE.AnimationMixer(baseModel);
-  if (fbx.animations?.length) clipsCache[ANIM.IDLE_NEUTRAL] = fbx.animations;
 }
 
-async function loadClipsFor(name) {
+/////////////////////////////////////////////////////
+// ANIMATION HANDLING
+/////////////////////////////////////////////////////
+let clipsCache = {}, fbxCache = {};
+
+async function loadClips(name) {
   if (clipsCache[name]) return clipsCache[name];
-  if (!FILES[name]) return [];
-  if (!fbxCache[name]) {
-    const loader = new THREE.FBXLoader();
-    const fbx = await loader.loadAsync(FBX_BASE + FILES[name]);
-    fbxCache[name] = fbx;
-  }
-  const fbx = fbxCache[name];
+  const loader = new THREE.FBXLoader();
+  const fbx = await loader.loadAsync(FBX_BASE + FILES[name]);
+  fbxCache[name] = fbx;
   const clips = (fbx.animations || []).map(c => c.clone());
   clipsCache[name] = clips;
   return clips;
 }
 
-/////////////////////////////////////////////////////
-// ANIMATION CONTROL
-/////////////////////////////////////////////////////
-async function play(name, { fade = 0.35, loop = true, minHold = 0.6 } = {}) {
+async function play(name, { fade = 0.4, loop = true } = {}) {
   if (!mixer) return;
-  const clips = await loadClipsFor(name);
+  const clips = await loadClips(name);
   if (!clips.length) return;
   const clip = clips[0];
-  const newAction = mixer.clipAction(clip);
-  newAction.reset();
-  newAction.setLoop(loop ? THREE.LoopRepeat : THREE.LoopOnce, Infinity);
-  newAction.clampWhenFinished = !loop;
-  newAction.enabled = true;
-  if (currentAction) currentAction.crossFadeTo(newAction, fade, false);
-  else newAction.fadeIn(fade);
-  newAction.play();
-  currentAction = newAction;
-  if (minHold > 0) await sleepMs(minHold * 1000);
+  const action = mixer.clipAction(clip);
+  action.reset();
+  action.setLoop(loop ? THREE.LoopRepeat : THREE.LoopOnce, Infinity);
+  if (currentAction) currentAction.crossFadeTo(action, fade, false);
+  action.play();
+  currentAction = action;
 }
 
 /////////////////////////////////////////////////////
-// CAMERA + RENDER
+// RENDER + CAMERA
 /////////////////////////////////////////////////////
 function updateCamera() {
   if (state === "idle" && cam.drift) cam.yaw += Math.sin(performance.now() * 0.00015) * 0.002;
@@ -209,22 +184,18 @@ function updateCamera() {
   }
 }
 
-function startRender() {
-  cancelAnimationFrame(renderRAF);
-  const tick = () => {
-    const dt = clock.getDelta();
-    mixer?.update(dt);
-    updateCamera();
-    renderer.render(scene, camera);
-    renderRAF = requestAnimationFrame(tick);
-  };
-  renderRAF = requestAnimationFrame(tick);
+function animate() {
+  requestAnimationFrame(animate);
+  const dt = clock.getDelta();
+  mixer?.update(dt);
+  updateCamera();
+  renderer.render(scene, camera);
 }
 
 /////////////////////////////////////////////////////
-// AUDIO / TTS
+// AUDIO + SPEECH
 /////////////////////////////////////////////////////
-function startAmplitudeDriveFor(audio) {
+function startAmplitude(audio) {
   try {
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
     const analyser = ctx.createAnalyser(); analyser.fftSize = 1024;
@@ -233,150 +204,86 @@ function startAmplitudeDriveFor(audio) {
     const data = new Uint8Array(analyser.fftSize);
     const tick = () => {
       analyser.getByteTimeDomainData(data);
-      let sum = 0; for (let i = 0; i < data.length; i++) { const v = (data[i] - 128) / 128; sum += v * v; }
-      const rms = Math.sqrt(sum / data.length), amp = clamp(rms * 7, 0, 1);
-      if (jawBone) jawBone.rotation.x = THREE.MathUtils.lerp(jawBone.rotation.x, -amp * 0.5, 0.35);
-      for (const b of fingerBones) if (b.rotation) b.rotation.z = THREE.MathUtils.lerp(b.rotation.z, amp * 0.22, 0.25);
+      let sum = 0; for (let i = 0; i < data.length; i++) { const v = (data[i]-128)/128; sum += v*v; }
+      const rms = Math.sqrt(sum/data.length), amp = clamp(rms*6,0,1);
+      if (jawBone) jawBone.rotation.x = THREE.MathUtils.lerp(jawBone.rotation.x, -amp*0.5, 0.35);
+      for (const b of fingerBones) if (b.rotation) b.rotation.z = THREE.MathUtils.lerp(b.rotation.z, amp*0.2, 0.3);
       requestAnimationFrame(tick);
     };
     requestAnimationFrame(tick);
-  } catch (e) { console.warn("Audio drive unavailable:", e); }
+  } catch(e){ console.warn(e); }
+}
+
+async function speakAndAnimate(text){
+  if(!text)return;
+  state="talking"; setStatus("💬 Thinking...");
+  await play(pick(talkPool));
+  const r=await fetch(`${WORKER_URL}/`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({prompt:text})});
+  const j=await r.json(); const reply=j.reply||"Well shoot, reckon I'm tongue-tied, partner.";
+  const tts=await fetch(`${WORKER_URL}/tts`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({text:reply,voice:"onyx"})});
+  const buf=await tts.arrayBuffer();
+  const audio=new Audio(URL.createObjectURL(new Blob([buf],{type:"audio/mpeg"})));
+  audio.playbackRate=0.92; audio.preservesPitch=false;
+  audio.addEventListener("play",()=>startAmplitude(audio),{once:true});
+  await audio.play();
+  audio.onended=async()=>{state="idle";setStatus("👂 Listening...");await play(pick(idlePool));};
 }
 
 /////////////////////////////////////////////////////
-// SPEECH
+// IDLE + SLEEP
 /////////////////////////////////////////////////////
-async function speakAndAnimate(userText) {
-  if (!userText) return;
-  try {
-    state = "talking";
-    setStatus("💬 Thinking...");
-    await play(pick(talkPool), { fade: 0.25, loop: true });
-    const resp = await fetch(`${WORKER_URL}/`, {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ prompt: userText })
-    });
-    const data = await resp.json();
-    const reply = data.reply || "Well shoot, reckon I'm tongue-tied, partner.";
-    const r = await fetch(`${WORKER_URL}/tts`, {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text: reply, voice: "onyx" })
-    });
-    if (!r.ok) { state = "idle"; await play(ANIM.IDLE_NEUTRAL, { fade: 0.4 }); return; }
-    const buf = await r.arrayBuffer();
-    const audio = new Audio(URL.createObjectURL(new Blob([buf], { type: "audio/mpeg" })));
-    audio.playbackRate = 0.92; audio.preservesPitch = false;
-    micLocked = true; if (window.recognition) try { window.recognition.stop(); } catch { }
-    audio.addEventListener("play", () => startAmplitudeDriveFor(audio), { once: true });
-    await audio.play().catch(() => { });
-    audio.onended = async () => {
-      micLocked = false; if (window.recognition) try { window.recognition.start(); } catch { }
-      state = "idle"; setStatus("👂 Listening...");
-      await play(pick(idlePool), { fade: 0.35 });
-    };
-  } catch (e) {
-    console.error(e);
-    state = "idle"; await play(ANIM.IDLE_NEUTRAL, { fade: 0.4 });
-  }
+async function fallAsleep(){
+  if(state!=="idle"||sleepLock)return;
+  sleepLock=true;state="sleeping";setStatus("😴 Nodding off…");
+  await play(ANIM.LIE_DOWN,{loop:false});
+  await play(ANIM.SLEEP);
+  cam.radius=7.2;
+}
+async function wakeUp(){
+  if(state!=="sleeping")return;
+  cam.radius=5.8;setStatus("😮 Waking up…");
+  await play(ANIM.WAKE,{loop:false});
+  await play(ANIM.IDLE_NEUTRAL);
+  state="idle";sleepLock=false;setStatus("👂 Listening...");
 }
 
-/////////////////////////////////////////////////////
-// IDLE + SKITS
-/////////////////////////////////////////////////////
-const SKITS = {
-  [ANIM.IDLE_BORED]: ["Ain’t much goin’ on… just me and my thoughts rattlin’."],
-  [ANIM.IDLE_LOOK]: ["Keepin’ an eye socket out for trouble."],
-  [ANIM.DANCE_SILLY]: ["They call this one the Rattle-‘n-Roll!"],
-  [ANIM.WAVE]: ["Howdy! Don’t mind the creaks—adds character."],
-  [ANIM.WAKE]: ["Whoo-wee… dreamt I was a scarecrow with a 401K."],
-};
-
-async function saySkitFor(name) {
-  const lines = SKITS[name]; if (!lines?.length) return;
-  const line = pick(lines);
-  const r = await fetch(`${WORKER_URL}/tts`, {
-    method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ text: line, voice: "onyx" })
-  });
-  if (!r.ok) return;
-  const buf = await r.arrayBuffer();
-  const audio = new Audio(URL.createObjectURL(new Blob([buf], { type: "audio/mpeg" })));
-  audio.playbackRate = 0.95; audio.preservesPitch = false;
-  audio.addEventListener("play", () => startAmplitudeDriveFor(audio), { once: true });
-  await audio.play().catch(() => { });
-}
-
-async function fallAsleep() {
-  if (state !== "idle" || sleepLock) return;
-  sleepLock = true; state = "sleeping"; setStatus("😴 Nodding off…");
-  await play(ANIM.LIE_DOWN, { fade: 0.45, loop: false });
-  await play(ANIM.SLEEP, { fade: 0.45, loop: true });
-  cam.radius = 7.2;
-}
-
-async function wakeUp() {
-  if (state !== "sleeping") return;
-  setStatus("😮 Waking up…");
-  cam.radius = 5.8;
-  await play(ANIM.WAKE, { fade: 0.45, loop: false });
-  await play(ANIM.IDLE_NEUTRAL, { fade: 0.45, loop: true });
-  state = "idle"; sleepLock = false; setStatus("👂 Listening...");
-  saySkitFor(ANIM.WAKE);
-}
-
-function scheduleIdle() {
-  const next = 12000 + Math.random() * 12000;
-  setTimeout(async () => {
-    if (state !== "idle") return scheduleIdle();
-    let name = pick(idlePool);
-    if (Math.random() < 0.1) name = pick(funPool);
-    await play(name, { fade: 0.35 });
-    saySkitFor(name);
-    if (Math.random() < 0.08 && !sleepLock) await fallAsleep();
+function scheduleIdle(){
+  setTimeout(async()=>{
+    if(state!=="idle")return scheduleIdle();
+    let n=pick(idlePool);
+    if(Math.random()<0.1)n=pick(funPool);
+    await play(n);
+    if(Math.random()<0.08&&!sleepLock)await fallAsleep();
     scheduleIdle();
-  }, next);
+  },12000+Math.random()*12000);
 }
 
 /////////////////////////////////////////////////////
-// MICROPHONE
+// MIC + BOOT
 /////////////////////////////////////////////////////
-window.SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-if (window.SpeechRecognition) {
-  const rec = new SpeechRecognition();
-  rec.continuous = true; rec.interimResults = false; rec.lang = "en-US";
-  window.recognition = rec;
-  rec.onresult = async (e) => {
-    const t = e.results[e.results.length - 1][0].transcript.trim().toLowerCase();
-    if (!t) return;
-    console.log("🎤", t);
-    if (state === "sleeping" && /hey\s*bob/.test(t)) return await wakeUp();
+window.SpeechRecognition=window.SpeechRecognition||window.webkitSpeechRecognition;
+if(window.SpeechRecognition){
+  const rec=new SpeechRecognition();
+  rec.continuous=true;rec.interimResults=false;rec.lang="en-US";
+  rec.onresult=async(e)=>{
+    const t=e.results[e.results.length-1][0].transcript.trim().toLowerCase();
+    if(!t)return;
+    if(state==="sleeping"&&/hey\s*bob/.test(t))return await wakeUp();
     await speakAndAnimate(t);
   };
-  rec.onerror = e => console.warn("Speech error:", e.error);
-  rec.onend = () => { if (!micLocked && state !== "sleeping") rec.start(); };
-  window.addEventListener("click", () => { try { rec.start(); setStatus("👂 Listening (mic on)…"); } catch { } }, { once: true });
+  rec.onend=()=>{if(!micLocked&&state!=="sleeping")rec.start();};
+  window.addEventListener("click",()=>{try{rec.start();setStatus("👂 Listening (mic on)…");}catch{}},{once:true});
 }
 
 /////////////////////////////////////////////////////
 // BOOT
 /////////////////////////////////////////////////////
-async function boot() {
-  console.log("🟢 Booting Bob 4.0.2 (FBX) …");
-  setStatus("Loading Bob …");
-  await ensureThreeDeps();
-  await initThree();
-  await loadBaseModel();
-  await Promise.all([
-    loadClipsFor(ANIM.IDLE_NEUTRAL),
-    loadClipsFor(ANIM.TALK),
-    loadClipsFor(ANIM.SLEEP),
-    loadClipsFor(ANIM.WAKE)
-  ]);
+async function boot(){
+  setStatus("🟢 Booting Bob …");
+  await loadThreeJS(); await loadFBXLoader();
+  await initScene(); await loadModel();
   await play(ANIM.IDLE_NEUTRAL);
-  startRender();
-  scheduleIdle();
-  state = "idle"; setStatus("👂 Listening…");
+  animate(); scheduleIdle(); state="idle"; setStatus("👂 Listening…");
   console.log("🎉 Bob ready!");
 }
-
-window.addEventListener("DOMContentLoaded", () => { boot(); });
+window.addEventListener("DOMContentLoaded",boot);
