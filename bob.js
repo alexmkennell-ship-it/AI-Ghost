@@ -1,9 +1,12 @@
-/* Autonomous Bob v8.1 — Hybrid Cowboy Ghost (real shading + subtle aura)
+/* Autonomous Bob v8.2 — Spectral Cowboy Gradient Edition
+   - Procedural gradient shading by height (hat/shirt/denim/boots/bone) — no per-mesh names required
+   - Subtle rim/aura via Fresnel tweak
+   - TTS autoplay fixed (user-gesture unlock)
    Worker routes:
      TTS  -> https://ghostaiv1.alexmkennell.workers.dev/tts
      Chat -> https://ghostaiv1.alexmkennell.workers.dev/
 */
-console.log("🟢 Bob v8.1 init");
+console.log("🟢 Bob v8.2 init");
 
 // ====== CONFIG ======
 const FBX_BASE    = "https://pub-30bcc0b2a7044074a19efdef19f69857.r2.dev/models/";
@@ -23,15 +26,27 @@ const ANIMS = [
   "Lying Down","Sleeping Idle","Sleeping Idle (1)","Waking",
   "Silly Dancing","Walkingsneakily","Walking","Walkinglikezombie","Stop Walking",
   "Waving","Shaking Head No","Shrugging","Talking","Laughing",
-  "Defeated","Sad Idle","Yelling Out","Waking"
+  "Defeated","Sad Idle","Yelling Out"
 ];
 
 // ====== GLOBALS ======
 let scene, camera, renderer, clock, mixer, model, currentAction, controls;
 let jawBone=null, mouthMorphTargets=[];
 let isSleeping=false, isSpeaking=false;
-let recognition=null, lastResultAt=0;
+let recognition=null;
 const cache = Object.create(null);
+
+// audio unlock
+let audioUnlocked = false;
+function unlockAudioOnce(){
+  if (audioUnlocked) return;
+  audioUnlocked = true;
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const b = ctx.createBuffer(1, 1, 22050);
+    const src = ctx.createBufferSource(); src.buffer = b; src.connect(ctx.destination); src.start(0);
+  } catch {}
+}
 
 // ====== HELPERS ======
 function choice(arr, avoid){ if(!arr?.length) return ""; const f=avoid?arr.filter(a=>a!==avoid):arr; return f[Math.floor(Math.random()*f.length)]||arr[0]; }
@@ -66,78 +81,144 @@ function initThree(){
   controls = new THREE.OrbitControls(camera, renderer.domElement);
   controls.enableRotate = controls.enableZoom = controls.enablePan = false;
   controls.target.set(0,1,0);
+
+  // one-time click/tap unlock for autoplay
+  window.addEventListener("pointerdown", unlockAudioOnce, { once:true });
+  window.addEventListener("keydown", unlockAudioOnce, { once:true });
 }
 
-// ====== MATERIALS: real shading per part ======
-function mat(opts){
-  return new THREE.MeshPhysicalMaterial(Object.assign({
-    transparent:true,
-    opacity:0.92,          // mostly solid
-    roughness:0.55,
-    metalness:0.04,
-    reflectivity:0.12,
-    clearcoat:0.06,
-    transmission:0.0,      // no see-through
-    thickness:0.2,
-    depthWrite:true,
-    blending:THREE.NormalBlending
-  }, opts));
-}
-
-const PALETTE = {
-  bone:      0xEAE7D8, // off-white bone
-  hat:       0x7B4A24, // warm brown leather
-  boots:     0x5A3B1E, // darker tan leather
-  denim:     0x496E9E, // muted blue
-  shirt:     0x7A6F4C, // olive drab
-  bronze:    0xC4A76A  // button accents
+// ====== PROCEDURAL GRADIENT SHADING ======
+// Colors (sRGB)
+const C = {
+  bone:   new THREE.Color(0xEAE7D8), // ivory
+  hat:    new THREE.Color(0x7B4A24), // brown leather
+  shirt:  new THREE.Color(0x7A6F4C), // olive drab
+  denim:  new THREE.Color(0x496E9E), // muted blue
+  boots:  new THREE.Color(0x5A3B1E), // dark tan
 };
+// Blend helper
+function lerpColor(out, a, b, t){ return out.copy(a).lerp(b, THREE.MathUtils.clamp(t,0,1)); }
 
-function chooseMaterialForName(name){
-  const n = name.toLowerCase();
+// Assign vertex colors by height bands; add Fresnel rim in shader
+function applyGradientMaterial(mesh, bounds){
+  const geom = mesh.geometry;
+  if (!geom || !geom.attributes?.position) return;
 
-  // order matters (more specific first)
-  if (/(hat|cowboyhat|cap)/.test(n))
-    return mat({ color: PALETTE.hat, roughness:0.6, metalness:0.05, emissive:0x86ffe2, emissiveIntensity:0.012 });
+  // ensure non-indexed for per-vertex colors
+  const g = geom.index ? geom.toNonIndexed() : geom;
+  const pos = g.attributes.position;
+  const vCount = pos.count;
 
-  if (/(boot|shoe|sole)/.test(n))
-    return mat({ color: PALETTE.boots, roughness:0.65, metalness:0.06, emissive:0x86ffe2, emissiveIntensity:0.008 });
+  // y-normalization across model
+  const minY = bounds.min.y, maxY = bounds.max.y, rangeY = Math.max(1e-6, maxY - minY);
 
-  if (/(overall|bib|suspender|jean|denim|pants|trouser)/.test(n))
-    return mat({ color: PALETTE.denim, roughness:0.7, metalness:0.03, emissive:0x86ffe2, emissiveIntensity:0.01 });
+  // vertex color buffer
+  const colors = new Float32Array(vCount * 3);
+  const temp = new THREE.Color();
 
-  if (/(shirt|sleeve|collar|torso|top)/.test(n))
-    return mat({ color: PALETTE.shirt, roughness:0.6, metalness:0.03, emissive:0x86ffe2, emissiveIntensity:0.01 });
+  for (let i=0;i<vCount;i++){
+    const y = pos.getY(i);
+    const t = (y - minY) / rangeY; // 0..1 from feet to hat top
+    // bands with soft blends
+    if (t > 0.78){                         // Hat band (top)
+      lerpColor(temp, C.hat, C.bone, (t-0.78)/0.22);
+    } else if (t > 0.55){                  // Shirt / chest
+      lerpColor(temp, C.shirt, C.denim, (t-0.55)/0.20);
+    } else if (t > 0.28){                  // Denim mid
+      lerpColor(temp, C.denim, C.denim, 0.0);
+    } else {                               // Boots / lower bones
+      lerpColor(temp, C.boots, C.bone, (t-0.00)/0.28);
+    }
+    colors[i*3+0] = temp.r;
+    colors[i*3+1] = temp.g;
+    colors[i*3+2] = temp.b;
+  }
 
-  if (/(button|buckle|snap|pin)/.test(n))
-    return mat({ color: PALETTE.bronze, roughness:0.35, metalness:0.45, emissive:0x86ffe2, emissiveIntensity:0.007 });
+  g.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+  mesh.geometry = g;
 
-  // default = bone (skull, hands, arms, etc.)
-  return mat({ color: PALETTE.bone, roughness:0.5, metalness:0.02, emissive:0x99fff0, emissiveIntensity:0.012 });
+  const m = new THREE.MeshPhysicalMaterial({
+    vertexColors: true,
+    transparent: false,
+    roughness: 0.55,
+    metalness: 0.04,
+    reflectivity: 0.12,
+    clearcoat: 0.06,
+    transmission: 0.0,
+    thickness: 0.2
+  });
+
+  // Subtle Fresnel rim tint (turquoise)
+  m.onBeforeCompile = (shader)=>{
+    shader.uniforms.fresnelColor = { value: new THREE.Color(0x9FFFE0) };
+    shader.uniforms.fresnelPower = { value: 2.25 };
+    shader.uniforms.fresnelMix   = { value: 0.10 };
+
+    shader.vertexShader = shader.vertexShader.replace(
+      '#include <common>',
+      `#include <common>
+       varying vec3 vWorldNormal;
+       varying vec3 vWorldPos;
+      `
+    ).replace(
+      '#include <begin_vertex>',
+      `#include <begin_vertex>
+       vec4 wPos = modelMatrix * vec4(transformed, 1.0);
+       vWorldPos = wPos.xyz;
+       vWorldNormal = normalize(mat3(modelMatrix) * objectNormal);
+      `
+    );
+
+    shader.fragmentShader = shader.fragmentShader.replace(
+      '#include <common>',
+      `#include <common>
+       varying vec3 vWorldNormal;
+       varying vec3 vWorldPos;
+       uniform vec3 fresnelColor;
+       uniform float fresnelPower;
+       uniform float fresnelMix;
+      `
+    ).replace(
+      '#include <output_fragment>',
+      `
+       // Fresnel rim
+       vec3 V = normalize(cameraPosition - vWorldPos);
+       float f = pow(1.0 - max(0.0, dot(normalize(vWorldNormal), V)), fresnelPower);
+       vec3 rim = fresnelColor * f * fresnelMix;
+       gl_FragColor = vec4(gl_FragColor.rgb + rim, gl_FragColor.a);
+       #include <output_fragment>
+      `
+    );
+  };
+
+  mesh.material = m;
 }
 
-// ====== LOAD RIG & ASSIGN MATERIALS ======
+// ====== LOAD RIG & ASSIGN ======
 async function loadRig(){
   const loader = new FBXLoader();
   const fbx = await loader.loadAsync(FBX_BASE + encodeURIComponent(RIG_FILE));
   fbx.scale.setScalar(1);
 
+  // compute global bounds first (for consistent y normalization)
+  const bb = new THREE.Box3().setFromObject(fbx);
+
   fbx.traverse(o=>{
-     console.log("MESH:", o.name);
+    // collect bones/morphs
+    if (o.isBone){
+      const n = o.name.toLowerCase();
+      if (/jaw/.test(n)) jawBone = o;
+      if (!jawBone && /head/.test(n)) jawBone = o;
+    }
     if (o.isMesh){
-      o.material = chooseMaterialForName(o.name || "");
-      // collect jaw morphs if present
       if (o.morphTargetDictionary){
         for (const k in o.morphTargetDictionary){
           if (/jaw|mouth|open/i.test(k))
             mouthMorphTargets.push({ mesh:o, idx:o.morphTargetDictionary[k] });
         }
       }
-    }
-    if (o.isBone){
-      const n = o.name.toLowerCase();
-      if (/jaw/.test(n)) jawBone = o;
-      if (!jawBone && /head/.test(n)) jawBone = o; // fallback
+      // Apply gradient material regardless of mesh naming
+      applyGradientMaterial(o, bb);
     }
   });
 
@@ -177,11 +258,12 @@ async function play(name, loop=THREE.LoopRepeat, fade=0.35){
   console.log("🤠 Bob action:", name);
 }
 
-// ====== TTS (mic muted while speaking) ======
+// ====== TTS (mic muted while speaking; uses unlock) ======
 async function say(text){
   if (!text) return;
   console.log("💬 Bob says:", text);
   try{
+    if (!audioUnlocked) unlockAudioOnce(); // just in case
     isSpeaking = true;
     if (recognition) recognition.stop(); // pause listening
     const r = await fetch(WORKER_TTS, {
@@ -224,14 +306,15 @@ async function randomIdle(){
 async function goSleep(){
   isSleeping = true;
   await play(choice(["Sleeping Idle","Lying Down"]));
-  await say(choice(["Gonna catch me a quick shut-eye.","Dreamin' of tumbleweeds."]));
+  await say(choice(["Gonna catch me a quick shut-eye.","Dreamin' o' tumbleweeds."]));
 }
 async function wakeUp(){
-  if (!isSleeping) return;
-  isSleeping = false;
-  await play("Waking", THREE.LoopOnce);
-  setTimeout(()=>play("Neutral Idle"), 1200);
-  await say(choice(["Mornin', partner.","Comin' back to it!"]));
+  if (!isSpeaking && isSleeping){
+    isSleeping = false;
+    await play("Waking", THREE.LoopOnce);
+    setTimeout(()=>play("Neutral Idle"), 1200);
+    await say(choice(["Mornin', partner.","Comin' back to it!"]));
+  }
 }
 async function doDance(){ await play(choice(["Silly Dancing","Walkingsneakily"])); await say(choice(["Watch these bones boogie!","Dust off them boots!"])); }
 async function waveHello(){ await play("Waving", THREE.LoopOnce); await say("Howdy there!"); }
@@ -267,7 +350,6 @@ function initSpeech(){
     if (isSpeaking) return; // ignore our own voice
     const res = e.results[e.resultIndex][0];
     const txt = (res.transcript || "").toLowerCase().trim();
-    lastResultAt = performance.now();
     console.log(`🗣️ You said: "${txt}"`);
 
     if (isSleeping){
@@ -353,8 +435,8 @@ function animate(){
     await loadRig();
     await play("Neutral Idle");
 
-    // unlock audio after first click (required by browsers)
-    window.addEventListener("click",()=>{ const s=new Audio(); s.play().catch(()=>{}); }, { once:true });
+    // user gesture unlock (guarantees autoplay)
+    window.addEventListener("click", unlockAudioOnce, { once:true });
 
     initSpeech();
     animate();
