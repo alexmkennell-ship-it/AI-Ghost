@@ -81,7 +81,7 @@ async function loadModel() {
   // Load the rig file. Use encodeURIComponent in case the filename contains spaces.
   const rigUrl = FBX_BASE + encodeURIComponent("T-Pose.fbx");
   const fbx    = await loader.loadAsync(rigUrl);
-  fbx.scale.setScalar(0.01);
+  fbx.scale.setScalar(1);
   fbx.position.set(0, 0, 0);
   scene.add(fbx);
   model = fbx;
