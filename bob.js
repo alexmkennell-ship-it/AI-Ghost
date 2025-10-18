@@ -400,4 +400,4 @@ function animate(){
     console.error(e);
     showWarnBadge();
   }
-})();
+})
