@@ -204,7 +204,7 @@ async function walkAwayAndReturn(){
       model.position.z=startZ+(targetZ-startZ)*k;
       const s=startScale+(targetScale-startScale)*k;
       model.scale.setScalar(s);
-      setModelOpacity(1-0.7*k);
+      setModelOpacity(1-0.08*k);
       requestAnimationFrame(k<1?step:res);
     }requestAnimationFrame(step);
   });
@@ -220,7 +220,7 @@ async function walkAwayAndReturn(){
       model.position.z=targetZ+(0-targetZ)*k;
       const s=targetScale+(1-targetScale)*k;
       model.scale.setScalar(s);
-      setModelOpacity(0.3+0.7*k);
+      setModelOpacity(0.03+0.07*k);
       requestAnimationFrame(k<1?step:res);
     }requestAnimationFrame(step);
   });
