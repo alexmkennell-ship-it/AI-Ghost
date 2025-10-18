@@ -1,50 +1,45 @@
-/* Autonomous Bob v7.1 — silent stage, console debug, jaw & voice, all anims (no T-Pose) */
-console.log("🟢 Bob v7.1 init");
+/* Autonomous Bob v7.3 — ghostly, jaw+voice, smart camera drift, console-only debug */
+console.log("🟢 Bob v7.3 init");
 
-// ---------- CONFIG ----------
+// ======== CONFIG ========
 const FBX_BASE = "https://pub-30bcc0b2a7044074a19efdef19f69857.r2.dev/models/";
-const RIG_FILE = "T-Pose.fbx"; // rig only; do NOT play as anim
+const RIG_FILE = "T-Pose.fbx"; // rig only; NOT played
+const GHOST_OPACITY = 0.30; // < 50% per projector brightness
+const CAMERA_ANCHOR = new THREE.Vector3(0, 1.6, 4);
+const DRIFT_RADIUS = 0.15;     // wander amplitude
+const RECENTER_EASE = 0.05;    // how quickly we ease to anchor per frame
+const DRIFT_RETURN_MS = 12000; // time scale for natural recenter
+const WALK_AWAY_Z = 8, WALK_SPEED = 1.5, SCALE_MIN = 0.25;
+const IDLE_MIN_MS = 15000, IDLE_MAX_MS = 30000;
 
-// All animations you listed (excluding T-Pose)
+// Animations (all except T-Pose)
 const ANIMS = {
   idle: [
     "Neutral Idle","Breathing Idle","Idle","Bored","Looking Around",
     "Shrugging","Laughing","Sad Idle","Defeated"
   ],
-  sleep: [
-    "Sleeping Idle","Sleeping Idle (1)","Lying Down"
-  ],
-  movement: [
-    "Walking","Walkinglikezombie","Walkingsneakily","Stop Walking","Waking"
-  ],
-  expressive: [
-    "Talking","Waving","Shaking Head No","Yelling Out","Silly Dancing","Laughing","Looking Around"
-  ]
+  sleep: ["Sleeping Idle","Sleeping Idle (1)","Lying Down"],
+  movement: ["Walking","Walkinglikezombie","Walkingsneakily","Stop Walking","Waking"],
+  expressive: ["Talking","Waving","Shaking Head No","Yelling Out","Silly Dancing","Laughing","Looking Around"]
 };
 const ALL_ANIMS = [...new Set([...ANIMS.idle, ...ANIMS.sleep, ...ANIMS.movement, ...ANIMS.expressive])];
 
-// Idle timing and wander config
-const IDLE_MIN_MS = 15000, IDLE_MAX_MS = 30000;
-const WALK_AWAY_Z = 8, WALK_SPEED = 1.5, SCALE_MIN = 0.25;
-
-// ---------- WARN BADGE ----------
+// ======== WARN BADGE (subtle only) ========
 function showWarnBadge() {
   if (document.getElementById("bob-warn")) return;
   const b = document.createElement("div");
-  b.id = "bob-warn";
-  b.textContent = "⚠️";
+  b.id = "bob-warn"; b.textContent = "⚠️";
   b.style.cssText = "position:fixed;top:10px;right:10px;font-size:24px;z-index:9999;user-select:none;";
   document.body.appendChild(b);
 }
 
-// ---------- THREE CORE ----------
+// ======== THREE CORE ========
 let scene, camera, renderer, clock, mixer, model, currentAction, controls;
 let jawBone = null;
 let mouthMorphTargets = []; // {mesh, key, idx}
 let isWalkingAway = false, isSleeping = false, lastAnimName = null;
-
 const cache = {};
-const textureCache = {};
+
 function rand(min,max){return Math.random()*(max-min)+min;}
 function choice(arr, avoid){const f=avoid?arr.filter(a=>a!==avoid):arr;return f[Math.floor(Math.random()*f.length)]||arr[0];}
 
@@ -57,7 +52,7 @@ function initThree(){
 
   scene = new THREE.Scene();
   camera = new THREE.PerspectiveCamera(45, window.innerWidth/window.innerHeight, 0.1, 100);
-  camera.position.set(0,1.6,4);
+  camera.position.copy(CAMERA_ANCHOR);
 
   const hemi=new THREE.HemisphereLight(0xffffff,0x444444,0.45);
   const key =new THREE.DirectionalLight(0xffffff,0.55); key.position.set(2,4,3);
@@ -74,7 +69,27 @@ function initThree(){
 
   controls = new THREE.OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true;
+  controls.enableRotate = false;
+  controls.enableZoom   = false;
+  controls.enablePan    = false;
   controls.target.set(0,1,0);
+}
+
+function makeGhostMaterial(existing) {
+  // spectral ghost: pale color, emissive glow, additive-ish look
+  const m = new THREE.MeshPhysicalMaterial({
+    color: 0xE8FFF2,
+    emissive: new THREE.Color(0x88ffcc),
+    emissiveIntensity: 0.15,
+    transparent: true,
+    opacity: GHOST_OPACITY,
+    roughness: 0.9,
+    metalness: 0.0,
+    transmission: 0.0,
+    depthWrite: false
+  });
+  m.blending = THREE.AdditiveBlending;
+  return m;
 }
 
 async function loadRig(){
@@ -84,11 +99,11 @@ async function loadRig(){
   fbx.scale.setScalar(1);
   fbx.position.set(0,0,0);
 
-  // Find jaw (support many naming variants) + collect morph targets
+  // Ghost look + jaw/morph discovery
   fbx.traverse(o=>{
     if (o.isMesh) {
-      // allow fade
-      if (o.material){ o.material.transparent=true; o.material.opacity=1; }
+      o.material = makeGhostMaterial(o.material);
+      o.material.needsUpdate = true;
       if (o.morphTargetDictionary){
         for (const key in o.morphTargetDictionary){
           if (/jaw|mouth|open/i.test(key)){
@@ -100,8 +115,7 @@ async function loadRig(){
     if (o.isBone){
       const n = o.name.toLowerCase();
       if (/(^|_)jaw(_|$)/.test(n) || /mixamorigjaw/.test(n) || /head_jaw|jaw_joint/.test(n)) jawBone = o;
-      // As a last resort, allow head as subtle pivot (tiny motion)
-      if (!jawBone && /(^|_)head(_|$)|mixamorighead/.test(n)) jawBone = o;
+      if (!jawBone && /(^|_)head(_|$)|mixamorighead/.test(n)) jawBone = o; // last-resort subtle head flap
     }
   });
 
@@ -114,15 +128,12 @@ async function loadRig(){
   const size = box.getSize(new THREE.Vector3()).length();
   const center = box.getCenter(new THREE.Vector3());
   camera.position.copy(center.clone().add(new THREE.Vector3(size/1.5, size/2.5, size/1.5)));
-  camera.lookAt(center);
   controls.target.copy(center);
+  camera.lookAt(center);
   return model;
 }
 
-// (Optional) apply your real textures here by mesh name if needed
-function applyUserMaterials(o){ /* hook for later if you want texture maps */ }
-
-// ---------- ANIMATION ----------
+// ======== ANIMATION ========
 async function loadClip(name){
   if (cache[name]) return cache[name];
   const loader = new FBXLoader();
@@ -144,7 +155,7 @@ async function play(name, loop=THREE.LoopRepeat, fade=0.35){
   console.log("🤠 Bob action:", name);
 }
 
-// ---------- BRAIN ----------
+// ======== BRAIN ========
 let idleTimer=null;
 function scheduleIdleCycle(){
   clearTimeout(idleTimer);
@@ -160,34 +171,17 @@ function scheduleIdleCycle(){
   }, delay);
 }
 
-async function randomIdle(){
-  const name = choice(ANIMS.idle, lastAnimName);
-  await play(name);
-  maybeSay(QUIPS.idle);
-}
-
-async function goSleepRandom(){
-  isSleeping = true;
-  const name = choice(ANIMS.sleep, lastAnimName);
-  await play(name);
-  maybeSay(QUIPS.sleep);
-}
-
+async function randomIdle(){ const n=choice(ANIMS.idle,lastAnimName); await play(n); maybeSay(QUIPS.idle); }
+async function goSleepRandom(){ isSleeping=true; console.log("😴 Bob sleeping"); const n=choice(ANIMS.sleep,lastAnimName); await play(n); maybeSay(QUIPS.sleep); }
 async function wakeUpRandom(){
   if (!isSleeping) return;
-  isSleeping = false;
+  isSleeping=false; console.log("🌞 Bob awake");
   const wake = choice(["Waking","Yelling Out","Talking"]);
   await play(wake, THREE.LoopOnce);
   setTimeout(()=>play("Neutral Idle"), 1200);
   maybeSay(QUIPS.return);
 }
-
-async function doDanceRandom(){
-  const name = choice(["Silly Dancing","Walkingsneakily","Laughing"], lastAnimName);
-  await play(name);
-  maybeSay(QUIPS.dance);
-}
-
+async function doDanceRandom(){ const n=choice(["Silly Dancing","Walkingsneakily","Laughing"],lastAnimName); await play(n); maybeSay(QUIPS.dance); }
 async function waveHello(){ await play("Waving", THREE.LoopOnce); }
 async function talkBit(){ await play("Talking"); maybeSay(QUIPS.talk); }
 async function yellBit(){ await play("Yelling Out", THREE.LoopOnce); maybeSay(QUIPS.yell); }
@@ -210,7 +204,7 @@ async function walkAwayAndReturn(){
       const s = startScale + (targetScale-startScale)*k;
       model.scale.setScalar(s);
       setModelOpacity(1 - 0.7*k);
-      if (k<1) requestAnimationFrame(step); else res();
+      requestAnimationFrame(k<1?step:res);
     }
     requestAnimationFrame(step);
   });
@@ -227,7 +221,7 @@ async function walkAwayAndReturn(){
       const s = targetScale + (1-targetScale)*k;
       model.scale.setScalar(s);
       setModelOpacity(0.3 + 0.7*k);
-      if (k<1) requestAnimationFrame(step); else res();
+      requestAnimationFrame(k<1?step:res);
     }
     requestAnimationFrame(step);
   });
@@ -245,15 +239,9 @@ function setModelOpacity(alpha){
   });
 }
 
-// ---------- QUIPS & VOICE ----------
+// ======== QUIPS & VOICE ========
 const QUIPS = {
-  idle:  [
-    "Ain't much stirrin' out here.",
-    "Wind's colder than a ghost's breath.",
-    "Reckon I'll stretch these old bones.",
-    "Just keepin' watch, partner.",
-    "Time moves slower than molasses."
-  ],
+  idle:  ["Ain't much stirrin' out here.","Wind's colder than a ghost's breath.","Reckon I'll stretch these old bones.","Just keepin' watch, partner.","Time moves slower than molasses."],
   dance: ["Y'all ain't ready for this two-step!","Watch these bones boogie!","I got rhythm for days.","Dust off them boots!"],
   sleep: ["Gonna catch me a quick shut-eye.","Dreamin' of tumbleweeds and campfires.","Wake me if the coyotes start singin'."],
   walkAway: ["Hold yer horses, be right back!","I'm moseyin' on for a spell.","Don't go nowhere now!"],
@@ -264,10 +252,10 @@ const QUIPS = {
 };
 
 let recognition=null, speaking=false, jawPhase=0, selectedVoice=null;
+let lastResultAt = 0; let lastConfidence = 0;
 
 function pickVoice(){
   const voices = window.speechSynthesis?.getVoices?.() || [];
-  // Prefer names containing "Onyx" if available; else deep male-ish
   const onyx = voices.find(v => /onyx/i.test(v.name));
   if (onyx) return onyx;
   const deep = voices.find(v => /(male|baritone|bass|english)/i.test(`${v.name} ${v.lang}`));
@@ -278,15 +266,11 @@ function sayRandom(arr){
   if (!window.speechSynthesis || !arr?.length) return;
   const phrase = choice(arr);
   const u = new SpeechSynthesisUtterance(phrase);
-  // Try to use Onyx + “filters and slowed”: slower rate, slightly lower pitch
   selectedVoice = selectedVoice || pickVoice();
   if (selectedVoice) u.voice = selectedVoice;
-  u.rate = 0.85;   // slowed
-  u.pitch = 0.9;   // a touch deeper
-  u.volume = 1.0;
+  u.rate = 0.85; u.pitch = 0.9; u.volume = 1.0;
   u.onstart = ()=>{ speaking=true; console.log("💬 Bob said:", phrase); };
   u.onend   = ()=>{ speaking=false; closeMouth(); };
-  // brief delay to avoid clipping with action crossfades
   setTimeout(()=>speechSynthesis.speak(u), 120);
 }
 
@@ -308,7 +292,7 @@ function updateJaw(dt){
   });
 }
 
-// ---------- SPEECH RECOGNITION ----------
+// ======== SPEECH RECOGNITION (with watchdog + confidence) ========
 function initSpeech(){
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SR){ console.warn("⚠️ SpeechRecognition unavailable — running silent mode."); return; }
@@ -319,17 +303,33 @@ function initSpeech(){
 
   recognition.onresult = (e)=>{
     const idx = e.resultIndex;
-    const transcript = (e.results[idx]?.[0]?.transcript || "").toLowerCase().trim();
-    console.log("🗣️ You said:", `"${transcript}"`);
+    const result = e.results[idx]?.[0];
+    const transcript = (result?.transcript || "").toLowerCase().trim();
+    const conf = (result?.confidence ?? 0);
+    lastResultAt = performance.now();
+    lastConfidence = conf;
+    console.log(`🗣️ You said: "${transcript}" (confidence ${conf.toFixed(2)})`);
     handleCommand(transcript);
   };
   recognition.onerror = (ev)=>{ console.warn("⚠️ Speech error:", ev.error); };
-  recognition.onend = ()=>{ try { recognition.start(); } catch {} };
+  recognition.onend = ()=>{ try { recognition.start(); console.warn("⚠️ SpeechRecognition restarted"); } catch {} };
   try { recognition.start(); console.log("🟢 Bob: Listening..."); } catch (e) {}
+
+  // Heartbeat/Watchdog
+  setInterval(()=>{
+    const now = performance.now();
+    const active = !!recognition;
+    console.log(`🧩 Speech check – active:${active} confidence:${lastConfidence.toFixed(2)}`);
+    // if no results for >10s, try restart
+    if (now - lastResultAt > 10000){
+      try { recognition.stop(); } catch {}
+      try { recognition.start(); console.warn("⚠️ SpeechRecognition restarted (watchdog)"); } catch {}
+    }
+  }, 15000);
 }
 
 function handleCommand(txt){
-  if (/hey\s*bob/.test(txt)){ wakeUpRandom(); return; }
+  if (/hey\s*bob/.test(txt)){ console.log("🔊 Wake phrase detected"); wakeUpRandom(); return; }
   if (/dance|boogie|move it/.test(txt)){ doDanceRandom(); return; }
   if (/sleep|nap/.test(txt)){ goSleepRandom(); return; }
   if (/walk away|leave|go away/.test(txt)){ walkAwayAndReturn(); return; }
@@ -341,28 +341,53 @@ function handleCommand(txt){
   play(choice(["Shrugging","Looking Around","Shaking Head No"], lastAnimName));
 }
 
-// ---------- CAMERA DRIFT ----------
+// ======== CAMERA: smart drift + auto-recenter + anti-shake ========
+let driftStart = performance.now();
 function updateCamera(dt){
-  if (!isWalkingAway && !isSleeping){
-    const drift = 0.1*dt;
-    controls.target.y = THREE.MathUtils.lerp(controls.target.y, 1.1 + Math.sin(performance.now()*0.0003)*0.05, 0.15);
-    camera.position.x += Math.sin(performance.now()*0.0002)*drift;
-    camera.position.z += Math.cos(performance.now()*0.0002)*drift;
-  }
+  const t = performance.now();
+  const driftAge = t - driftStart;
+  // figure-eight wander around anchor
+  const phase = t * 0.0002;
+  const offX = Math.sin(phase) * DRIFT_RADIUS;
+  const offZ = Math.cos(phase * 0.9) * DRIFT_RADIUS;
+
+  // target point (wander) and easing back to anchor over DRIFT_RETURN_MS
+  const recenterFactor = Math.min(1, driftAge / DRIFT_RETURN_MS);
+  const easeBack = RECENTER_EASE + recenterFactor * 0.02; // glides back gently
+
+  // During sleep or walk-away, clamp closer to anchor
+  const anchorBias = (isSleeping || isWalkingAway) ? 0.2 : 1.0;
+
+  const target = new THREE.Vector3(
+    THREE.MathUtils.lerp(CAMERA_ANCHOR.x, CAMERA_ANCHOR.x + offX, anchorBias),
+    THREE.MathUtils.lerp(CAMERA_ANCHOR.y, CAMERA_ANCHOR.y, anchorBias),
+    THREE.MathUtils.lerp(CAMERA_ANCHOR.z, CAMERA_ANCHOR.z + offZ, anchorBias)
+  );
+
+  // Smoothly move camera toward target & lightly ease toward anchor to avoid drift accumulation
+  camera.position.lerp(target, 0.05);
+  camera.position.lerp(CAMERA_ANCHOR, easeBack);
+
+  // Anti-shake: small low-pass on look target
+  const look = new THREE.Vector3(0,1,0);
+  controls.target.lerp(look, 0.08);
   controls.update();
+
+  // reset cycle periodically to breathe
+  if (driftAge > DRIFT_RETURN_MS*1.2) driftStart = t;
 }
 
-// ---------- MAIN LOOP ----------
+// ======== MAIN LOOP ========
 function animate(){
   requestAnimationFrame(animate);
   const dt = clock.getDelta();
   mixer?.update(dt);
-  updateJaw(dt);
+  updateJaw(isSleeping ? dt*0.5 : dt);
   updateCamera(dt);
   renderer.render(scene, camera);
 }
 
-// ---------- BOOT ----------
+// ======== BOOT ========
 (async ()=>{
   try{
     if (typeof window.FBXLoader==="undefined" && window.THREE && THREE.FBXLoader){ window.FBXLoader = THREE.FBXLoader; }
@@ -371,10 +396,9 @@ function animate(){
     await loadRig();
     await play("Neutral Idle");
     scheduleIdleCycle();
-    // Voice synthesis voices can be async to load; pre-warm list:
+
     if (window.speechSynthesis){
-      window.speechSynthesis.onvoiceschanged = ()=>{ selectedVoice = pickVoice(); };
-      selectedVoice = pickVoice();
+      window.speechSynthesis.onvoiceschanged = ()=>{}; // voices will be fetched when speaking
     }
     initSpeech();
     animate();
