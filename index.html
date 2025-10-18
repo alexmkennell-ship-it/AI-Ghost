@@ -5,44 +5,32 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Bob the Bone Cowboy</title>
 
-  <!-- ✅ Three.js + FBXLoader loaded FIRST as global -->
-  <script type="module">
-    import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
-    import { FBXLoader } from "https://unpkg.com/three@0.160.0/examples/jsm/loaders/FBXLoader.js";
-    window.THREE = THREE;
-    THREE.FBXLoader = FBXLoader;
-  </script>
+  <!-- ✅ Load Three.js and FBXLoader globally -->
+  <script src="https://unpkg.com/three@0.152.2/build/three.min.js"></script>
+  <script src="https://unpkg.com/three@0.152.2/examples/js/loaders/FBXLoader.js"></script>
 
   <style>
     html, body {
-      height: 100%;
       margin: 0;
+      height: 100%;
       background: radial-gradient(circle at center, #0b0b0b 50%, #000 100%);
       color: #b8ffb8;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-family: monospace;
       overflow: hidden;
     }
-    canvas {
-      display: block;
-      width: 100vw;
-      height: 100vh;
-    }
+    canvas { display: block; }
     #status {
-      position: absolute;
-      bottom: 20px;
-      left: 0;
-      right: 0;
+      position: fixed;
+      bottom: 10px;
+      width: 100%;
       text-align: center;
       font-size: 1rem;
-      opacity: 0.85;
-      user-select: none;
+      opacity: 0.8;
     }
   </style>
 </head>
 <body>
-  <div id="status">Loading Bob...</div>
-
-  <!-- ✅ Bob script runs AFTER global THREE loads -->
-  <script src="./bob.js" defer></script>
+  <div id="status">Loading Bob…</div>
+  <script src="./bob.js"></script>
 </body>
 </html>
