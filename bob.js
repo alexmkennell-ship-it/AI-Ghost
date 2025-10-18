@@ -1,42 +1,17 @@
-// bob.js — v5.3 "Global Loader Edition (Legacy)"
-// ✅ Works with r146 global three.js + FBXLoader
-// ✅ FBX animation, voice, idle skits, and smooth camera
 console.log("🟢 Booting Bob (global legacy)…");
 
-/////////////////////////////////////////////////////
 // CONFIG
-/////////////////////////////////////////////////////
 const WORKER_URL = "https://ghostaiv1.alexmkennell.workers.dev";
 const FBX_BASE = "https://pub-30bcc0b2a7044074a19efdef19f69857.r2.dev/bob-animations/";
 const TEX_URL = `${FBX_BASE}Boney_Bob_the_skeleto_1017235951_texture.png`;
 
-/////////////////////////////////////////////////////
 // VERIFY GLOBALS
-/////////////////////////////////////////////////////
-if (typeof THREE === "undefined" || typeof THREE.FBXLoader === "undefined") {
+if (typeof THREE === "undefined" || typeof FBXLoader === "undefined") {
   console.error("❌ THREE.js or FBXLoader not loaded globally. Check script order in HTML.");
   throw new Error("Missing THREE or FBXLoader");
 }
 
-const FBXLoader = hasFBXOnThree
-  ? globalScope.THREE.FBXLoader
-  : globalScope.FBXLoader;
-
-if (!hasFBXOnThree && hasGlobalFBX) {
-  globalScope.THREE.FBXLoader = FBXLoader;
-}
-
 console.log("✅ THREE.js + FBXLoader detected.");
-
-const FBXLoader = THREE.FBXLoader;
-
-/////////////////////////////////////////////////////
-// UTILITIES
-/////////////////////////////////////////////////////
-const setStatus = (m) => (document.getElementById("status").textContent = m);
-const sleepMs = (ms) => new Promise((r) => setTimeout(r, ms));
-const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
-const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 
 /////////////////////////////////////////////////////
 // GLOBALS
