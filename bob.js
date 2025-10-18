@@ -1,16 +1,21 @@
-// bob.js — Revision Safe Boot Version
-// Assumes THREE + FBXLoader loaded globally first
+// bob.js — v4.0.2 "FBX Personality Engine (Safe Global)"
+// Uses global THREE + FBXLoader from HTML script
+// Smooth animation blending, idle variety, sleep, TTS, and gestures.
 
-////////////////////////////////////////////////////
-// CONFIG
-////////////////////////////////////////////////////
+/////////////////////////////////////////////////////
+// CONFIGURATION
+/////////////////////////////////////////////////////
 const WORKER_URL = "https://ghostaiv1.alexmkennell.workers.dev";
 const FBX_BASE = "https://pub-30bcc0b2a7044074a19efdef19f69857.r2.dev/bob-animations/";
 const TEX_URL = `${FBX_BASE}Boney_Bob_the_skeleto_1017235951_texture.png`;
 
-////////////////////////////////////////////////////
-// ANIMATION MAPS
-////////////////////////////////////////////////////
+if (!window.THREE || !THREE.FBXLoader) {
+  throw new Error("❌ THREE or FBXLoader not found. Ensure they are loaded before bob.js");
+}
+
+/////////////////////////////////////////////////////
+// ANIMATIONS
+/////////////////////////////////////////////////////
 const FILES = {
   "Neutral Idle": "Neutral Idle.fbx",
   "Breathing Idle": "Breathing Idle.fbx",
@@ -18,75 +23,55 @@ const FILES = {
   "Bored": "Bored.fbx",
   "Sad Idle": "Sad Idle.fbx",
   "Sleeping Idle": "Sleeping Idle.fbx",
-  "Sleeping Idle (alt)": "Sleeping Idle (1).fbx",
   "Waking": "Waking.fbx",
   "Lying Down": "Lying Down.fbx",
-  "Defeated": "Defeated.fbx",
-  "Walking": "Walking.fbx",
-  "Stop Walking": "Stop Walking.fbx",
-  "Walkinglikezombie": "Walkinglikezombie.fbx",
-  "Walkingsneakily": "Walkingsneakily.fbx",
   "Talking": "Talking.fbx",
   "Shrugging": "Shrugging.fbx",
-  "Waving": "Waving.fbx",
+  "Shaking Head No": "Shaking Head No.fbx",
   "Laughing": "Laughing.fbx",
+  "Waving": "Waving.fbx",
   "Silly Dancing": "Silly Dancing.fbx",
 };
 
 const ANIM = {
-  IDLE_NEUTRAL: "Neutral Idle",
-  IDLE_BREATH: "Breathing Idle",
-  IDLE_LOOK: "Looking Around",
-  IDLE_BORED: "Bored",
-  IDLE_SAD: "Sad Idle",
-  LIE_DOWN: "Lying Down",
+  IDLE: "Neutral Idle",
+  BREATH: "Breathing Idle",
+  LOOK: "Looking Around",
+  BORED: "Bored",
+  SAD: "Sad Idle",
+  LIE: "Lying Down",
   SLEEP: "Sleeping Idle",
-  SLEEP_ALT: "Sleeping Idle (alt)",
   WAKE: "Waking",
   TALK: "Talking",
   SHRUG: "Shrugging",
-  WAVE: "Waving",
+  NO: "Shaking Head No",
   LAUGH: "Laughing",
-  DANCE_SILLY: "Silly Dancing",
+  WAVE: "Waving",
+  DANCE: "Silly Dancing",
 };
 
-const idlePool = [ANIM.IDLE_NEUTRAL, ANIM.IDLE_BREATH, ANIM.IDLE_LOOK, ANIM.IDLE_BORED, ANIM.IDLE_SAD];
-const talkPool = [ANIM.TALK, ANIM.SHRUG, ANIM.LAUGH];
-const funPool = [ANIM.DANCE_SILLY];
+const idlePool = [ANIM.IDLE, ANIM.BREATH, ANIM.LOOK, ANIM.BORED, ANIM.SAD];
+const talkPool = [ANIM.TALK, ANIM.SHRUG, ANIM.NO, ANIM.LAUGH];
+const funPool = [ANIM.DANCE, ANIM.WAVE];
 
-////////////////////////////////////////////////////
-// UTILS
-////////////////////////////////////////////////////
-const setStatus = (m) => {
-  const e = document.getElementById("status");
-  if (e) e.textContent = m;
-};
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
-const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+/////////////////////////////////////////////////////
+// UTILITIES
+/////////////////////////////////////////////////////
+const sleepMs = (ms) => new Promise((r) => setTimeout(r, ms));
+const pick = (a) => a[Math.floor(Math.random() * a.length)];
+const setStatus = (m) => (document.getElementById("status").textContent = m);
 
-////////////////////////////////////////////////////
-// SCENE & GLOBALS
-////////////////////////////////////////////////////
+/////////////////////////////////////////////////////
+// THREE.JS CORE
+/////////////////////////////////////////////////////
 let scene, camera, renderer, mixer, clock;
-let baseModel, currentAction;
-let clipsCache = {}, fbxCache = {};
-let jawBone = null, fingerBones = [], focusBone = null;
+let baseModel, jawBone = null, fingerBones = [], focusBone = null;
 let state = "boot", micLocked = false, sleepLock = false;
-let cam = { radius: 5.8, yaw: 0, pitch: 1.3, drift: true, target: null };
-let renderRAF = 0;
+let clipsCache = {}, fbxCache = {};
+let cam = { radius: 5.8, yaw: 0, pitch: 1.3089969, target: new THREE.Vector3(0, 1.2, 0) };
 
-////////////////////////////////////////////////////
-// INIT SCENE
-////////////////////////////////////////////////////
-function initThreeSafe() {
-  if (typeof THREE === "undefined" || !THREE.FBXLoader) {
-    console.error("ERROR: THREE or FBXLoader not found. Ensure they are loaded before bob.js");
-    throw new Error("Missing THREE or FBXLoader");
-  }
-
+async function initThree() {
   renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.setSize(window.innerWidth, window.innerHeight);
   document.body.appendChild(renderer.domElement);
 
@@ -94,16 +79,13 @@ function initThreeSafe() {
   camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
   camera.position.set(0, 1.6, cam.radius);
 
-  clock = new THREE.Clock();
-
   const hemi = new THREE.HemisphereLight(0xffffff, 0x444444, 0.8);
   scene.add(hemi);
-  const dir = new THREE.DirectionalLight(0xffffff, 0.9);
+  const dir = new THREE.DirectionalLight(0xffffff, 0.8);
   dir.position.set(2, 4, 3);
   scene.add(dir);
 
-  cam.target = new THREE.Vector3(0, 1.2, 0);
-
+  clock = new THREE.Clock();
   window.addEventListener("resize", () => {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
@@ -111,12 +93,12 @@ function initThreeSafe() {
   });
 }
 
-////////////////////////////////////////////////////
-// LOAD MODELS & TEXTURES
-////////////////////////////////////////////////////
+/////////////////////////////////////////////////////
+// LOADERS
+/////////////////////////////////////////////////////
 async function loadBaseModel() {
   const loader = new THREE.FBXLoader();
-  const fbx = await loader.loadAsync(FBX_BASE + FILES[ANIM.IDLE_NEUTRAL]);
+  const fbx = await loader.loadAsync(FBX_BASE + FILES[ANIM.IDLE]);
   fbx.scale.setScalar(0.01);
   scene.add(fbx);
   baseModel = fbx;
@@ -130,10 +112,11 @@ async function loadBaseModel() {
     }
     if (o.isBone && /jaw|chin/i.test(o.name)) jawBone = o;
     if (o.isBone && /(finger|thumb|hand|wrist)/i.test(o.name)) fingerBones.push(o);
-    if (o.isBone && /head|neck|spine2/i.test(o.name) && !focusBone) focusBone = o;
+    if (o.isBone && /head|neck|spine2/i.test(o.name)) focusBone = o;
   });
 
   mixer = new THREE.AnimationMixer(baseModel);
+  if (fbx.animations?.length) clipsCache[ANIM.IDLE] = fbx.animations;
 }
 
 async function loadClipsFor(name) {
@@ -141,41 +124,32 @@ async function loadClipsFor(name) {
   const loader = new THREE.FBXLoader();
   const fbx = await loader.loadAsync(FBX_BASE + FILES[name]);
   fbxCache[name] = fbx;
-  const clones = (fbx.animations || []).map((c) => c.clone());
-  clipsCache[name] = clones;
-  return clones;
+  const clips = (fbx.animations || []).map((c) => c.clone());
+  clipsCache[name] = clips;
+  return clips;
 }
 
-////////////////////////////////////////////////////
-// ANIMATION CONTROL
-////////////////////////////////////////////////////
-async function playAnim(name, { fade = 0.4, loop = true, minHold = 0.6 } = {}) {
+/////////////////////////////////////////////////////
+// PLAYBACK + CAMERA
+/////////////////////////////////////////////////////
+let currentAction = null;
+
+async function play(name, fade = 0.4, loop = true) {
   if (!mixer) return;
   const clips = await loadClipsFor(name);
   if (!clips.length) return;
   const clip = clips[0];
-  const next = mixer.clipAction(clip);
-  next.reset();
-  next.setLoop(loop ? THREE.LoopRepeat : THREE.LoopOnce, Infinity);
-  next.clampWhenFinished = !loop;
-  next.enabled = true;
-
-  if (currentAction) currentAction.crossFadeTo(next, fade, false);
-  else next.fadeIn(fade);
-
-  next.play();
-  currentAction = next;
-
-  if (minHold > 0) await sleep(minHold * 1000);
+  const newAction = mixer.clipAction(clip);
+  newAction.reset();
+  newAction.setLoop(loop ? THREE.LoopRepeat : THREE.LoopOnce, Infinity);
+  newAction.clampWhenFinished = !loop;
+  if (currentAction) currentAction.crossFadeTo(newAction, fade, false);
+  newAction.play();
+  currentAction = newAction;
 }
 
-////////////////////////////////////////////////////
-// CAMERA + RENDER
-////////////////////////////////////////////////////
 function updateCamera() {
-  if (state === "idle" && cam.drift) {
-    cam.yaw += Math.sin(performance.now() * 0.00015) * 0.002;
-  }
+  cam.yaw += Math.sin(performance.now() * 0.00015) * 0.002;
   const r = cam.radius, y = cam.pitch, xz = r * Math.cos(y);
   camera.position.set(
     cam.target.x + xz * Math.sin(cam.yaw),
@@ -183,200 +157,104 @@ function updateCamera() {
     cam.target.z + xz * Math.cos(cam.yaw)
   );
   camera.lookAt(cam.target);
-
-  if (focusBone?.getWorldPosition) {
-    const p = new THREE.Vector3();
-    focusBone.getWorldPosition(p);
-    cam.target.lerp(p, 0.08);
-  }
 }
 
-function startRenderLoop() {
-  cancelAnimationFrame(renderRAF);
-  const tick = () => {
-    const dt = clock.getDelta();
-    if (mixer) mixer.update(dt);
-    updateCamera();
-    renderer.render(scene, camera);
-    renderRAF = requestAnimationFrame(tick);
-  };
-  renderRAF = requestAnimationFrame(tick);
+function renderLoop() {
+  requestAnimationFrame(renderLoop);
+  const dt = clock.getDelta();
+  mixer?.update(dt);
+  updateCamera();
+  renderer.render(scene, camera);
 }
 
-////////////////////////////////////////////////////
-// AUDIO / TTS + JAW MOTION
-////////////////////////////////////////////////////
-function startAmplitudeDrive(audio) {
-  try {
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    const analyser = ctx.createAnalyser();
-    analyser.fftSize = 1024;
-    const src = ctx.createMediaElementSource(audio);
-    src.connect(analyser);
-    analyser.connect(ctx.destination);
-
-    const data = new Uint8Array(analyser.fftSize);
-    function tick() {
-      analyser.getByteTimeDomainData(data);
-      let sum = 0;
-      for (let i = 0; i < data.length; i++) {
-        const v = (data[i] - 128) / 128;
-        sum += v * v;
-      }
-      const rms = Math.sqrt(sum / data.length);
-      const amp = clamp(rms * 7, 0, 1);
-
-      if (jawBone) jawBone.rotation.x = THREE.MathUtils.lerp(jawBone.rotation.x, -amp * 0.5, 0.35);
-      for (const b of fingerBones) {
-        if (b.rotation) b.rotation.z = THREE.MathUtils.lerp(b.rotation.z, amp * 0.22, 0.25);
-      }
-
-      requestAnimationFrame(tick);
-    }
+/////////////////////////////////////////////////////
+// AUDIO-DRIVEN JAW + FINGERS
+/////////////////////////////////////////////////////
+function driveAmplitude(audio) {
+  const ctx = new (window.AudioContext || window.webkitAudioContext)();
+  const analyser = ctx.createAnalyser(); analyser.fftSize = 1024;
+  const src = ctx.createMediaElementSource(audio);
+  src.connect(analyser); analyser.connect(ctx.destination);
+  const data = new Uint8Array(analyser.fftSize);
+  function tick() {
+    analyser.getByteTimeDomainData(data);
+    let sum = 0;
+    for (let i = 0; i < data.length; i++) { const v = (data[i] - 128) / 128; sum += v * v; }
+    const rms = Math.sqrt(sum / data.length);
+    const amp = Math.min(rms * 7, 1);
+    if (jawBone) jawBone.rotation.x = THREE.MathUtils.lerp(jawBone.rotation.x, -amp * 0.5, 0.35);
+    for (const b of fingerBones) if (b.rotation) b.rotation.z = THREE.MathUtils.lerp(b.rotation.z, amp * 0.2, 0.25);
     requestAnimationFrame(tick);
-  } catch (err) {
-    console.warn("Amplitude drive error:", err);
   }
+  tick();
 }
 
+/////////////////////////////////////////////////////
+// SPEECH + ANIMATION
+/////////////////////////////////////////////////////
 async function speakAndAnimate(text) {
   if (!text) return;
-  state = "talking";
-  setStatus("💬 Thinking...");
-  await playAnim(pick(talkPool), { fade: 0.25, loop: true });
-  try {
-    const chat = await fetch(`${WORKER_URL}/`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ prompt: text })
-    });
-    const chatJson = await chat.json();
-    const reply = chatJson.reply || "Well shoot, reckon I'm tongue-tied, partner.";
-    console.log("🤖 Bob says:", reply);
+  state = "talking"; setStatus("💬 Thinking...");
+  await play(pick(talkPool), 0.25, true);
 
-    const tts = await fetch(`${WORKER_URL}/tts`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text: reply, voice: "onyx" })
-    });
-    if (!tts.ok) {
-      console.warn("TTS error:", tts.status);
-      state = "idle";
-      await playAnim(ANIM.IDLE_NEUTRAL);
-      return;
-    }
-    const buf = await tts.arrayBuffer();
-    const blob = new Blob([buf], { type: "audio/mpeg" });
-    const url = URL.createObjectURL(blob);
-    const audio = new Audio(url);
-    audio.playbackRate = 0.92;
-    audio.preservesPitch = false;
+  const chat = await fetch(`${WORKER_URL}/`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ prompt: text }),
+  });
+  const data = await chat.json();
+  const reply = data.reply || "Well, partner, reckon I'm all outta bones to pick.";
+  console.log("🤖", reply);
 
-    audio.addEventListener("play", () => startAmplitudeDrive(audio), { once: true });
-    await audio.play().catch((e) => console.warn("Audio play error:", e));
+  const r = await fetch(`${WORKER_URL}/tts`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text: reply, voice: "onyx" }),
+  });
+  if (!r.ok) return;
+  const buf = await r.arrayBuffer();
+  const audio = new Audio(URL.createObjectURL(new Blob([buf], { type: "audio/mpeg" })));
+  audio.playbackRate = 0.9; audio.preservesPitch = false;
 
-    audio.onended = async () => {
-      state = "idle";
-      setStatus("👂 Listening...");
-      await playAnim(pick(idlePool));
-    };
-  } catch (err) {
-    console.error("Speech error:", err);
-    state = "idle";
-    await playAnim(ANIM.IDLE_NEUTRAL);
-  }
+  micLocked = true; if (window.recognition) try { window.recognition.stop(); } catch {}
+  audio.addEventListener("play", () => driveAmplitude(audio), { once: true });
+  await audio.play().catch(() => {});
+  audio.onended = async () => {
+    micLocked = false; if (window.recognition) try { window.recognition.start(); } catch {}
+    state = "idle"; setStatus("👂 Listening...");
+    await play(pick(idlePool), 0.35, true);
+  };
 }
 
-////////////////////////////////////////////////////
-// IDLE / SLEEP LOGIC
-////////////////////////////////////////////////////
-async function fallAsleep() {
-  if (state !== "idle" || sleepLock) return;
-  sleepLock = true;
-  state = "sleeping";
-  setStatus("😴 Nodding off…");
-  await playAnim(ANIM.LIE_DOWN, { fade: 0.45, loop: false });
-  await playAnim(ANIM.SLEEP, { fade: 0.45, loop: true });
-  cam.radius = 7.2;
-}
-
-async function wakeUp() {
-  if (state !== "sleeping") return;
-  setStatus("😮 Waking up…");
-  cam.radius = 5.8;
-  await playAnim(ANIM.WAKE, { fade: 0.45, loop: false });
-  await playAnim(ANIM.IDLE_NEUTRAL, { fade: 0.45, loop: true });
-  state = "idle";
-  sleepLock = false;
-  setStatus("👂 Listening...");
-}
-
-function scheduleIdle() {
-  const next = 12000 + Math.random() * 12000;
-  setTimeout(async () => {
-    if (state !== "idle") {
-      return scheduleIdle();
-    }
-    let name = pick(idlePool);
-    if (Math.random() < 0.1) name = pick(funPool);
-    await playAnim(name, { fade: 0.35 });
-    if (Math.random() < 0.08 && !sleepLock) await fallAsleep();
-    scheduleIdle();
-  }, next);
-}
-
-////////////////////////////////////////////////////
-// MICROPHONE SETUP
-////////////////////////////////////////////////////
+/////////////////////////////////////////////////////
+// MICROPHONE + IDLE
+/////////////////////////////////////////////////////
 window.SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 if (window.SpeechRecognition) {
   const rec = new SpeechRecognition();
-  rec.continuous = true;
-  rec.interimResults = false;
-  rec.lang = "en-US";
+  rec.continuous = true; rec.interimResults = false; rec.lang = "en-US";
   window.recognition = rec;
 
   rec.onresult = async (e) => {
     const t = e.results[e.results.length - 1][0].transcript.trim().toLowerCase();
-    if (!t) return;
-    if (state === "sleeping" && /hey\s*bob/.test(t)) {
-      return wakeUp();
-    }
+    console.log("🎤", t);
+    if (state === "sleeping" && /hey\s*bob/.test(t)) return await wakeUp();
     await speakAndAnimate(t);
   };
-  rec.onerror = (e) => console.warn("Speech error:", e.error);
-  rec.onend = () => {
-    if (!micLocked && state !== "sleeping") rec.start();
-  };
-  window.addEventListener("click", () => {
-    try {
-      rec.start();
-      setStatus("👂 Listening (mic on)...");
-    } catch (err) {
-      console.warn("Mic start error:", err);
-    }
-  }, { once: true });
+
+  rec.onend = () => { if (!micLocked) rec.start(); };
+  window.addEventListener("click", () => { try { rec.start(); setStatus("👂 Mic on…"); } catch {} }, { once: true });
 }
 
-////////////////////////////////////////////////////
+/////////////////////////////////////////////////////
 // BOOT
-////////////////////////////////////////////////////
+/////////////////////////////////////////////////////
 async function boot() {
-  console.log("🟢 Booting Bob (safe global) …");
-  setStatus("Loading Bob …");
-  initThreeSafe();
+  console.log("🟢 Booting Bob (v4.0.2 safe)");
+  setStatus("Loading Bob...");
+  await initThree();
   await loadBaseModel();
-  await Promise.all([
-    loadClipsFor(ANIM.IDLE_NEUTRAL),
-    loadClipsFor(ANIM.TALK),
-    loadClipsFor(ANIM.WAKE)
-  ]);
-  await playAnim(ANIM.IDLE_NEUTRAL);
-  startRenderLoop();
-  scheduleIdle();
-  state = "idle";
-  setStatus("👂 Listening…");
+  await play(ANIM.IDLE, 0.4, true);
+  renderLoop();
+  setStatus("👂 Listening...");
   console.log("🎉 Bob ready!");
 }
-
 window.addEventListener("DOMContentLoaded", boot);
