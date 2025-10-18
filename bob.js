@@ -1,9 +1,6 @@
-// bob.js — v4.0.1 "FBX Personality Engine – Full Build"
-// Loads FBX animations directly from R2
-// Keeps single textured skeleton active with smooth crossfades
-// Onyx TTS + amplitude-driven jaw/fingers
-// Cinematic 5.8m camera (auto focus + drift)
-// Idle variety, random skits, and 3-hour cached memory
+// bob.js — v4.0.2 "FBX Personality Engine – Safe Loader Build"
+// Fixes THREE.js load timing & duplicate imports
+// Keeps all previous functionality intact: TTS, jaw motion, skits, idle/sleep logic, and camera drift.
 
 /////////////////////////////////////////////////////
 // CONFIGURATION
@@ -12,33 +9,26 @@ const WORKER_URL = "https://ghostaiv1.alexmkennell.workers.dev";
 const FBX_BASE = "https://pub-30bcc0b2a7044074a19efdef19f69857.r2.dev/bob-animations/";
 const TEX_URL = `${FBX_BASE}Boney_Bob_the_skeleto_1017235951_texture.png`;
 
-(async () => {
-  // load Three.js and FBXLoader first
-  const threeMod = await import("https://unpkg.com/three@0.160.0/build/three.module.js");
-  window.THREE = threeMod;
-  Object.assign(window, threeMod);
-  const { FBXLoader } = await import("https://unpkg.com/three@0.160.0/examples/jsm/loaders/FBXLoader.js");
-  THREE.FBXLoader = FBXLoader;
-
-})();
-
 /////////////////////////////////////////////////////
-// SAFE IMPORTS — FIXED THREE.js LOADING
+// THREE.JS DEPENDENCIES
 /////////////////////////////////////////////////////
 async function ensureThreeDeps() {
-  // Load core Three.js
+  // Load Three.js core if not loaded
   if (!window.THREE) {
-    const threeMod = await import("https://unpkg.com/three@0.160.0/build/three.module.js");
-    window.THREE = threeMod;
-    Object.assign(window, threeMod);
+    const mod = await import("https://unpkg.com/three@0.160.0/build/three.module.js");
+    window.THREE = mod;
+    Object.assign(window, mod);
   }
-
-  // Load FBXLoader
+  // Load FBXLoader if not loaded
   if (!THREE.FBXLoader) {
     const { FBXLoader } = await import("https://unpkg.com/three@0.160.0/examples/jsm/loaders/FBXLoader.js");
     THREE.FBXLoader = FBXLoader;
   }
 }
+
+// Ensure all dependencies are ready before continuing
+await ensureThreeDeps();
+console.log("✅ THREE.js ready:", !!window.THREE, "FBXLoader:", !!THREE.FBXLoader);
 
 /////////////////////////////////////////////////////
 // ANIMATION MAPS
@@ -93,10 +83,7 @@ const ANIM = {
   DANCE_SILLY: "Silly Dancing",
 };
 
-const idlePool = [
-  ANIM.IDLE_NEUTRAL, ANIM.IDLE_BREATH, ANIM.IDLE_LOOK,
-  ANIM.IDLE_BORED, ANIM.IDLE_SAD
-];
+const idlePool = [ANIM.IDLE_NEUTRAL, ANIM.IDLE_BREATH, ANIM.IDLE_LOOK, ANIM.IDLE_BORED, ANIM.IDLE_SAD];
 const talkPool = [ANIM.TALK, ANIM.SHRUG, ANIM.NO, ANIM.LAUGH];
 const funPool = [ANIM.DANCE_SILLY];
 const walkPool = [ANIM.WALK, ANIM.WALK_ZOMBIE, ANIM.WALK_SNEAK];
@@ -108,17 +95,16 @@ const setStatus = (m) => { const e = document.getElementById("status"); if (e) e
 const sleepMs = (ms) => new Promise(r => setTimeout(r, ms));
 const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
-const lerp = (a, b, t) => a + (b - a) * t;
 
 /////////////////////////////////////////////////////
 // THREE.JS SETUP
 /////////////////////////////////////////////////////
 let scene, camera, renderer, clock, mixer;
-let baseModel, currentAction = null, actions = {}, clipsCache = {}, fbxCache = {};
+let baseModel, currentAction = null, clipsCache = {}, fbxCache = {};
 let jawBone = null, fingerBones = [], focusBone = null;
 let state = "boot", micLocked = false, sleepLock = false;
 let cam = { radius: 5.8, yaw: 0, pitch: 1.308996939, drift: true, target: new THREE.Vector3(0, 1.2, 0) };
-let driftRAF = 0, renderRAF = 0;
+let renderRAF = 0;
 
 async function initThree() {
   renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
@@ -145,7 +131,7 @@ async function initThree() {
 }
 
 /////////////////////////////////////////////////////
-// MODEL LOADING & TEXTURE
+// MODEL LOADING
 /////////////////////////////////////////////////////
 async function loadBaseModel() {
   const loader = new THREE.FBXLoader();
@@ -197,7 +183,6 @@ async function play(name, { fade = 0.35, loop = true, minHold = 0.6 } = {}) {
   newAction.setLoop(loop ? THREE.LoopRepeat : THREE.LoopOnce, Infinity);
   newAction.clampWhenFinished = !loop;
   newAction.enabled = true;
-
   if (currentAction) currentAction.crossFadeTo(newAction, fade, false);
   else newAction.fadeIn(fade);
   newAction.play();
@@ -206,7 +191,7 @@ async function play(name, { fade = 0.35, loop = true, minHold = 0.6 } = {}) {
 }
 
 /////////////////////////////////////////////////////
-// CAMERA + RENDER LOOP
+// CAMERA + RENDER
 /////////////////////////////////////////////////////
 function updateCamera() {
   if (state === "idle" && cam.drift) cam.yaw += Math.sin(performance.now() * 0.00015) * 0.002;
@@ -237,7 +222,7 @@ function startRender() {
 }
 
 /////////////////////////////////////////////////////
-// TTS + JAW MOVEMENT
+// AUDIO / TTS
 /////////////////////////////////////////////////////
 function startAmplitudeDriveFor(audio) {
   try {
@@ -259,7 +244,7 @@ function startAmplitudeDriveFor(audio) {
 }
 
 /////////////////////////////////////////////////////
-// SPEECH SYSTEM
+// SPEECH
 /////////////////////////////////////////////////////
 async function speakAndAnimate(userText) {
   if (!userText) return;
@@ -273,7 +258,6 @@ async function speakAndAnimate(userText) {
     });
     const data = await resp.json();
     const reply = data.reply || "Well shoot, reckon I'm tongue-tied, partner.";
-    console.log("🤖", reply);
     const r = await fetch(`${WORKER_URL}/tts`, {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text: reply, voice: "onyx" })
@@ -288,7 +272,7 @@ async function speakAndAnimate(userText) {
     audio.onended = async () => {
       micLocked = false; if (window.recognition) try { window.recognition.start(); } catch { }
       state = "idle"; setStatus("👂 Listening...");
-      await play(pick([ANIM.IDLE_NEUTRAL, ANIM.IDLE_BREATH, ANIM.IDLE_LOOK]), { fade: 0.35 });
+      await play(pick(idlePool), { fade: 0.35 });
     };
   } catch (e) {
     console.error(e);
@@ -297,7 +281,7 @@ async function speakAndAnimate(userText) {
 }
 
 /////////////////////////////////////////////////////
-// SKIT ENGINE + IDLE LOGIC
+// IDLE + SKITS
 /////////////////////////////////////////////////////
 const SKITS = {
   [ANIM.IDLE_BORED]: ["Ain’t much goin’ on… just me and my thoughts rattlin’."],
@@ -322,9 +306,6 @@ async function saySkitFor(name) {
   await audio.play().catch(() => { });
 }
 
-/////////////////////////////////////////////////////
-// IDLE + SLEEP CYCLE
-/////////////////////////////////////////////////////
 async function fallAsleep() {
   if (state !== "idle" || sleepLock) return;
   sleepLock = true; state = "sleeping"; setStatus("😴 Nodding off…");
@@ -379,11 +360,8 @@ if (window.SpeechRecognition) {
 /////////////////////////////////////////////////////
 // BOOT
 /////////////////////////////////////////////////////
-/////////////////////////////////////////////////////
-// BOOT
-/////////////////////////////////////////////////////
 async function boot() {
-  console.log("🟢 Booting Bob 4.0.1 (FBX) …");
+  console.log("🟢 Booting Bob 4.0.2 (FBX) …");
   setStatus("Loading Bob …");
   await ensureThreeDeps();
   await initThree();
@@ -401,6 +379,4 @@ async function boot() {
   console.log("🎉 Bob ready!");
 }
 
-window.addEventListener("DOMContentLoaded", () => {
-  boot();
-});
+window.addEventListener("DOMContentLoaded", () => { boot(); });
