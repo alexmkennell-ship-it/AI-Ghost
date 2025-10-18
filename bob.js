@@ -1,45 +1,83 @@
-// bob.js — v4.1.0 “No Imports Build”
-// Fully standalone, using global THREE + FBXLoader
-// Voice, animation, sleep cycle, and cinematic camera
+// bob.js — v5.1 “Legacy Global Loader Edition”
+// ✅ Works with non-module three.js + FBXLoader from index.html
+// ✅ FBX animation, voice, idle skits, smooth camera
 
+console.log("🟢 Booting Bob (standalone)...");
+
+/////////////////////////////////////////////////////
+// CONFIGURATION
+/////////////////////////////////////////////////////
 const WORKER_URL = "https://ghostaiv1.alexmkennell.workers.dev";
 const FBX_BASE = "https://pub-30bcc0b2a7044074a19efdef19f69857.r2.dev/bob-animations/";
 const TEX_URL = `${FBX_BASE}Boney_Bob_the_skeleto_1017235951_texture.png`;
 
 if (!window.THREE || !window.FBXLoader) {
   console.error("❌ THREE.js or FBXLoader not loaded. Check your HTML script includes.");
+  throw new Error("Missing THREE or FBXLoader");
 }
 
+/////////////////////////////////////////////////////
+// UTILITIES
+/////////////////////////////////////////////////////
+const setStatus = (m) => {
+  const e = document.getElementById("status");
+  if (e) e.textContent = m;
+};
+const sleepMs = (ms) => new Promise(r => setTimeout(r, ms));
+const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+
+/////////////////////////////////////////////////////
+// GLOBALS
+/////////////////////////////////////////////////////
+let scene, camera, renderer, clock, mixer;
+let model, currentAction = null;
+let jawBone = null, fingerBones = [], focusBone = null;
+let state = "boot", micLocked = false, sleepLock = false;
+let cam = { radius: 5.8, yaw: 0, pitch: 1.308996939, drift: true, target: new THREE.Vector3(0, 1.2, 0) };
+
+/////////////////////////////////////////////////////
+// MODEL LOADING
+/////////////////////////////////////////////////////
 const FILES = {
   "Neutral Idle": "Neutral Idle.fbx",
+  "Breathing Idle": "Breathing Idle.fbx",
+  "Looking Around": "Looking Around.fbx",
   "Talking": "Talking.fbx",
   "Sleeping Idle": "Sleeping Idle.fbx",
   "Waking": "Waking.fbx",
   "Bored": "Bored.fbx",
   "Silly Dancing": "Silly Dancing.fbx",
-  "Waving": "Waving.fbx",
 };
 
-const ANIM = {
-  IDLE: "Neutral Idle",
-  TALK: "Talking",
-  SLEEP: "Sleeping Idle",
-  WAKE: "Waking",
-  BORED: "Bored",
-  DANCE: "Silly Dancing",
-  WAVE: "Waving",
-};
+async function loadModel() {
+  const loader = new FBXLoader();
+  const fbx = await loader.loadAsync(FBX_BASE + FILES["Neutral Idle"]);
+  fbx.scale.setScalar(0.01);
+  scene.add(fbx);
+  model = fbx;
 
-let scene, camera, renderer, clock, mixer;
-let model, currentAction, jawBone = null, fingerBones = [];
-let cam = { radius: 5.8, yaw: 0, pitch: 1.31, target: new THREE.Vector3(0, 1.2, 0) };
-let state = "boot", sleepLock = false, micLocked = false;
-const setStatus = msg => (document.getElementById("status").textContent = msg);
+  const tex = await new THREE.TextureLoader().loadAsync(TEX_URL);
+  tex.flipY = false;
 
-// ----------------------------------------------------
-// INITIALIZE
-// ----------------------------------------------------
-async function init() {
+  model.traverse(o => {
+    if (o.isMesh) {
+      o.material.map = tex;
+      o.material.needsUpdate = true;
+    }
+    if (o.isBone && /jaw|chin/i.test(o.name)) jawBone = o;
+    if (o.isBone && /(finger|thumb|hand|wrist)/i.test(o.name)) fingerBones.push(o);
+    if (o.isBone && /head|neck|spine2/i.test(o.name) && !focusBone) focusBone = o;
+  });
+
+  mixer = new THREE.AnimationMixer(model);
+  return fbx;
+}
+
+/////////////////////////////////////////////////////
+// THREE SETUP
+/////////////////////////////////////////////////////
+function initThree() {
   renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
   renderer.setSize(window.innerWidth, window.innerHeight);
   document.body.appendChild(renderer.domElement);
@@ -48,10 +86,14 @@ async function init() {
   camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
   camera.position.set(0, 1.6, cam.radius);
 
-  const light = new THREE.HemisphereLight(0xffffff, 0x333333, 1);
-  scene.add(light);
+  const hemi = new THREE.HemisphereLight(0xffffff, 0x444444, 0.8);
+  const key = new THREE.DirectionalLight(0xffffff, 0.8);
+  key.position.set(2, 4, 3);
+  scene.add(hemi);
+  scene.add(key);
 
   clock = new THREE.Clock();
+
   window.addEventListener("resize", () => {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
@@ -59,167 +101,142 @@ async function init() {
   });
 }
 
-// ----------------------------------------------------
-// LOAD MODEL
-// ----------------------------------------------------
-async function loadModel() {
+/////////////////////////////////////////////////////
+// ANIMATION
+/////////////////////////////////////////////////////
+const cache = {};
+async function loadClip(name) {
+  if (cache[name]) return cache[name];
   const loader = new FBXLoader();
-  const base = await loader.loadAsync(FBX_BASE + FILES[ANIM.IDLE]);
-  base.scale.setScalar(0.01);
-  scene.add(base);
-  model = base;
-
-  const tex = new THREE.TextureLoader().load(TEX_URL);
-  tex.flipY = false;
-  model.traverse(o => {
-    if (o.isMesh) {
-      o.material.map = tex;
-      o.material.needsUpdate = true;
-    }
-    if (o.isBone && /jaw|chin/i.test(o.name)) jawBone = o;
-    if (o.isBone && /(finger|thumb|hand|wrist)/i.test(o.name)) fingerBones.push(o);
-  });
-
-  mixer = new THREE.AnimationMixer(model);
-  return base;
+  const fbx = await loader.loadAsync(FBX_BASE + FILES[name]);
+  const clip = fbx.animations[0];
+  cache[name] = clip;
+  return clip;
 }
 
-// ----------------------------------------------------
-// ANIMATION
-// ----------------------------------------------------
-const clipsCache = {};
 async function play(name, fade = 0.4, loop = true) {
-  if (!mixer || !FILES[name]) return;
-  if (!clipsCache[name]) {
-    const fbx = await new FBXLoader().loadAsync(FBX_BASE + FILES[name]);
-    clipsCache[name] = fbx.animations;
-  }
-  const clip = clipsCache[name][0];
+  const clip = await loadClip(name);
+  if (!clip) return;
   const action = mixer.clipAction(clip);
   action.reset();
   action.setLoop(loop ? THREE.LoopRepeat : THREE.LoopOnce, Infinity);
   if (currentAction) currentAction.crossFadeTo(action, fade, false);
+  else action.fadeIn(fade);
   action.play();
   currentAction = action;
 }
 
-// ----------------------------------------------------
-// CAMERA & RENDER
-// ----------------------------------------------------
+/////////////////////////////////////////////////////
+// CAMERA + LOOP
+/////////////////////////////////////////////////////
 function updateCamera() {
+  if (state === "idle" && cam.drift)
+    cam.yaw += Math.sin(performance.now() * 0.00015) * 0.002;
   const r = cam.radius, y = cam.pitch, xz = r * Math.cos(y);
-  cam.yaw += Math.sin(performance.now() * 0.0001) * 0.002;
-  camera.position.set(xz * Math.sin(cam.yaw), r * Math.sin(y), xz * Math.cos(cam.yaw));
+  camera.position.set(
+    cam.target.x + xz * Math.sin(cam.yaw),
+    cam.target.y + r * Math.sin(y),
+    cam.target.z + xz * Math.cos(cam.yaw)
+  );
   camera.lookAt(cam.target);
 }
 
-function render() {
-  requestAnimationFrame(render);
+function animate() {
+  requestAnimationFrame(animate);
   const dt = clock.getDelta();
   mixer?.update(dt);
   updateCamera();
   renderer.render(scene, camera);
 }
 
-// ----------------------------------------------------
-// VOICE / TTS
-// ----------------------------------------------------
-function startAmplitudeDriveFor(audio) {
-  const ctx = new (window.AudioContext || window.webkitAudioContext)();
-  const analyser = ctx.createAnalyser(); analyser.fftSize = 1024;
-  const src = ctx.createMediaElementSource(audio);
-  src.connect(analyser); analyser.connect(ctx.destination);
-  const data = new Uint8Array(analyser.fftSize);
-
-  function tick() {
-    analyser.getByteTimeDomainData(data);
-    let sum = 0; for (let i = 0; i < data.length; i++) { const v = (data[i] - 128) / 128; sum += v * v; }
-    const rms = Math.sqrt(sum / data.length), amp = Math.min(rms * 7, 1);
-    if (jawBone) jawBone.rotation.x = THREE.MathUtils.lerp(jawBone.rotation.x, -amp * 0.5, 0.25);
-    for (const b of fingerBones) if (b.rotation) b.rotation.z = THREE.MathUtils.lerp(b.rotation.z, amp * 0.22, 0.2);
-    requestAnimationFrame(tick);
-  }
-  requestAnimationFrame(tick);
-}
-
+/////////////////////////////////////////////////////
+// TTS + TALK
+/////////////////////////////////////////////////////
 async function speakAndAnimate(text) {
   if (!text) return;
-  setStatus("💬 Thinking...");
   state = "talking";
-  await play(ANIM.TALK, 0.3);
+  await play("Talking", 0.25, true);
+
   const resp = await fetch(`${WORKER_URL}/`, {
-    method: "POST", headers: { "Content-Type": "application/json" },
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ prompt: text })
   });
   const data = await resp.json();
-  const reply = data.reply || "Well shoot, reckon I’m tongue-tied.";
+  const reply = data.reply || "Well shoot, reckon I'm tongue-tied, partner.";
   const tts = await fetch(`${WORKER_URL}/tts`, {
-    method: "POST", headers: { "Content-Type": "application/json" },
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ text: reply, voice: "onyx" })
   });
   const buf = await tts.arrayBuffer();
   const audio = new Audio(URL.createObjectURL(new Blob([buf], { type: "audio/mpeg" })));
-  audio.playbackRate = 0.92;
-  micLocked = true;
-  audio.addEventListener("play", () => startAmplitudeDriveFor(audio), { once: true });
-  await audio.play().catch(() => {});
-  audio.onended = async () => {
-    micLocked = false;
+  audio.addEventListener("ended", async () => {
     state = "idle";
-    setStatus("👂 Listening...");
-    await play(ANIM.IDLE, 0.4);
-  };
+    await play("Neutral Idle");
+  });
+  await audio.play();
 }
 
-// ----------------------------------------------------
-// IDLE + SLEEP
-// ----------------------------------------------------
-async function fallAsleep() {
-  if (state !== "idle" || sleepLock) return;
-  sleepLock = true;
-  state = "sleeping";
-  setStatus("😴 Nodding off…");
-  await play(ANIM.SLEEP, 0.6);
-  cam.radius = 7.2;
+/////////////////////////////////////////////////////
+// SKITS + IDLE
+/////////////////////////////////////////////////////
+const SKITS = [
+  "Ain’t much goin’ on… just me and my thoughts rattlin’.",
+  "Keepin’ an eye socket out for trouble.",
+  "They call this one the Rattle-‘n-Roll!",
+  "Whoo-wee… dreamt I was a scarecrow with a 401K.",
+];
+async function randomIdle() {
+  while (true) {
+    if (state === "idle" && Math.random() < 0.4) {
+      const anim = pick(["Breathing Idle", "Looking Around", "Bored", "Silly Dancing"]);
+      await play(anim);
+      if (Math.random() < 0.3) {
+        const line = pick(SKITS);
+        const tts = await fetch(`${WORKER_URL}/tts`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text: line, voice: "onyx" })
+        });
+        const buf = await tts.arrayBuffer();
+        const audio = new Audio(URL.createObjectURL(new Blob([buf], { type: "audio/mpeg" })));
+        await audio.play();
+      }
+    }
+    await sleepMs(15000 + Math.random() * 10000);
+  }
 }
 
-async function wakeUp() {
-  if (state !== "sleeping") return;
-  cam.radius = 5.8;
-  setStatus("😮 Waking up…");
-  await play(ANIM.WAKE, 0.5);
-  state = "idle"; sleepLock = false;
-  setStatus("👂 Listening...");
-}
-
-// ----------------------------------------------------
+/////////////////////////////////////////////////////
 // MICROPHONE
-// ----------------------------------------------------
-window.SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-if (window.SpeechRecognition) {
-  const rec = new SpeechRecognition();
-  rec.continuous = true; rec.lang = "en-US";
-  rec.onresult = async e => {
-    const t = e.results[e.results.length - 1][0].transcript.trim().toLowerCase();
-    if (state === "sleeping" && /hey\s*bob/.test(t)) return await wakeUp();
-    await speakAndAnimate(t);
+/////////////////////////////////////////////////////
+if ("webkitSpeechRecognition" in window || "SpeechRecognition" in window) {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const rec = new SR();
+  rec.continuous = true;
+  rec.lang = "en-US";
+  rec.onresult = (e) => {
+    const txt = e.results[e.results.length - 1][0].transcript.toLowerCase();
+    console.log("🎤", txt);
+    if (/hey\s*bob/.test(txt)) {
+      speakAndAnimate(txt);
+    }
   };
-  rec.onerror = e => console.warn("Mic error:", e.error);
-  rec.onend = () => { if (!micLocked && state !== "sleeping") rec.start(); };
-  window.addEventListener("click", () => { try { rec.start(); setStatus("👂 Listening (mic on)…"); } catch {} }, { once: true });
+  rec.start();
 }
 
-// ----------------------------------------------------
+/////////////////////////////////////////////////////
 // BOOT
-// ----------------------------------------------------
+/////////////////////////////////////////////////////
 async function boot() {
-  console.log("🟢 Booting Bob (standalone)...");
-  await init();
+  setStatus("Initializing Bob...");
+  initThree();
   await loadModel();
-  await play(ANIM.IDLE);
-  render();
+  await play("Neutral Idle");
+  animate();
   state = "idle";
   setStatus("👂 Listening...");
-  console.log("🎉 Bob ready!");
+  randomIdle();
 }
-window.addEventListener("DOMContentLoaded", boot);
+boot();
