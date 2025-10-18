@@ -5,7 +5,7 @@ console.log("🟢 Bob v7.4 init");
 const FBX_BASE = "https://pub-30bcc0b2a7044074a19efdef19f69857.r2.dev/models/";
 const RIG_FILE = "T-Pose.fbx";
 const WORKER_URL = "https://ghostaiv1.alexmkennell.workers.dev/speak";
-const GHOST_OPACITY = 0.08;
+const GHOST_OPACITY = 0.02;
 const CAMERA_ANCHOR = new THREE.Vector3(0, 1.6, 4);
 const DRIFT_RADIUS = 0.15;
 const RECENTER_EASE = 0.05;
