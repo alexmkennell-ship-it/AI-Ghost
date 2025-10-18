@@ -1,7 +1,7 @@
 console.log("🤠 Booting Bob (v6.6-stable — I Can See You Now)…");
 
 const WORKER_URL = "https://ghostaiv1.alexmkennell.workers.dev";
-const FBX_BASE   = "https://pub-30bcc0b2a7044074a19efdef19f69857.r2.dev/models/";
+const FBX_BASE   = "https://pub-30bcc0b2a7044074a19efdef19f69857.r2.dev/bob-animations/models/";
 const BASE_RIG   = "T-Pose.fbx";
 const START_ANIM = "Neutral Idle";
 
