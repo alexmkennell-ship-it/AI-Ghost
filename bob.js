@@ -12,6 +12,18 @@ const WORKER_URL = "https://ghostaiv1.alexmkennell.workers.dev";
 const FBX_BASE = "https://pub-30bcc0b2a7044074a19efdef19f69857.r2.dev/bob-animations/";
 const TEX_URL = `${FBX_BASE}Boney_Bob_the_skeleto_1017235951_texture.png`;
 
+(async () => {
+  // load Three.js and FBXLoader first
+  const threeMod = await import("https://unpkg.com/three@0.160.0/build/three.module.js");
+  window.THREE = threeMod;
+  Object.assign(window, threeMod);
+  const { FBXLoader } = await import("https://unpkg.com/three@0.160.0/examples/jsm/loaders/FBXLoader.js");
+  THREE.FBXLoader = FBXLoader;
+
+  // --- now load Bob
+  await import("./bob_core.js");
+})();
+
 /////////////////////////////////////////////////////
 // SAFE IMPORTS — FIXED THREE.js LOADING
 /////////////////////////////////////////////////////
