@@ -5,15 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Bob the Bone Cowboy</title>
 
-  <!-- ✅ Load global THREE (r148 — stable) -->
-  <script src="https://cdn.jsdelivr.net/gh/mrdoob/three.js@r148/build/three.min.js"></script>
+  <!-- ✅ Load global THREE (stable, global build) -->
+  <script src="https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/build/three.min.js"></script>
 
-  <!-- ✅ Load FBXLoader as ES module and attach to window -->
-  <script type="module">
-    import { FBXLoader } from "https://cdn.jsdelivr.net/gh/mrdoob/three.js@r148/examples/jsm/loaders/FBXLoader.js";
-    window.FBXLoader = FBXLoader;
-    console.log("✅ FBXLoader module attached to window");
-  </script>
+  <!-- ✅ Load the classic non-module FBXLoader -->
+  <script src="https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/js/loaders/FBXLoader.js"></script>
 
   <style>
     html, body {
@@ -38,16 +34,16 @@
 <body>
   <div id="status">Loading Bob…</div>
 
-  <!-- ✅ Load Bob only after FBXLoader attaches -->
+  <!-- ✅ Load Bob only after THREE & FBXLoader exist -->
   <script>
     (function wait() {
       if (window.THREE && window.FBXLoader) {
-        console.log("🚀 THREE & FBXLoader ready — booting Bob.js");
+        console.log("🚀 THREE & FBXLoader loaded — booting Bob.js");
         const s = document.createElement("script");
         s.src = "./bob.js";
         document.body.appendChild(s);
       } else {
-        console.log("⏳ Waiting for FBXLoader attachment…");
+        console.log("⏳ Waiting for THREE / FBXLoader…");
         setTimeout(wait, 250);
       }
     })();
