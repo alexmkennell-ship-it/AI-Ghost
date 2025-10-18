@@ -1,5 +1,63 @@
-console.log("🤠 Booting Bob (v6.6-stable — I Can See You Now)…");
+console.log("🤠 Booting Bob (v6.7 — Worker-Integrated)…");
 
+// point everything to your Worker
+const WORKER_URL = "https://ghostaiv1.alexmkennell.workers.dev";
+const FBX_BASE   = WORKER_URL + "/models/";
+const BASE_RIG   = "T-Pose.fbx";
+const START_ANIM = "Neutral Idle";
+
+let scene, camera, renderer, mixer, rigRoot, clock;
+let state = "idle";
+
+// ------------- wait for THREE + FBXLoader -------------
+async function waitForGlobals() {
+  let tries = 0;
+  while (tries++ < 100) {
+    if (window.THREE && (window.FBXLoader || (window.THREE && THREE.FBXLoader))) {
+      if (!window.FBXLoader && window.THREE.FBXLoader)
+        window.FBXLoader = window.THREE.FBXLoader;
+      console.log("✅ THREE + FBXLoader ready.");
+      return;
+    }
+    await new Promise(r => setTimeout(r, 200));
+  }
+  throw new Error("❌ FBXLoader never became available.");
+}
+
+// ------------- load rig safely from Worker -------------
+async function loadRig() {
+  const loader = new FBXLoader();
+  const rigURL = FBX_BASE + BASE_RIG;
+  console.log("🪶 Loading rig from:", rigURL);
+
+  try {
+    const rig = await loader.loadAsync(rigURL);
+    console.log("✅ Rig loaded successfully:", rig);
+    rig.scale.setScalar(0.01);
+    rig.position.y = -1;
+    scene.add(rig);
+    rigRoot = rig;
+
+    // temp glow to ensure visibility
+    rig.traverse(o => {
+      if (o.isMesh) {
+        o.material.emissive = new THREE.Color(0x00ff00);
+        o.material.emissiveIntensity = 0.3;
+      }
+    });
+
+    // center camera on him
+    const box = new THREE.Box3().setFromObject(rig);
+    const center = box.getCenter(new THREE.Vector3());
+    const size = box.getSize(new THREE.Vector3()).length();
+    camera.position.copy(center.clone().add(new THREE.Vector3(0, size * 0.1, size * 1.2)));
+    camera.lookAt(center);
+
+    mixer = new THREE.AnimationMixer(rig);
+  } catch (err) {
+    console.error("❌ Failed to load FBX from Worker:", err);
+  }
+}
 const WORKER_URL = "https://ghostaiv1.alexmkennell.workers.dev";
 const FBX_BASE   = "https://pub-30bcc0b2a7044074a19efdef19f69857.r2.dev/models/";
 const BASE_RIG   = "T-Pose.fbx";
