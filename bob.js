@@ -1,4 +1,4 @@
-console.log("🟢 Booting Bob (v5.7 — Texture & Lighting Fix)…");
+console.log("🟢 Booting Bob (v5.8 — Color & Reflection Fix)…");
 
 // ---------- CONFIG ----------
 const WORKER_URL = "https://ghostaiv1.alexmkennell.workers.dev";
@@ -15,19 +15,17 @@ if (typeof THREE === "undefined" || typeof FBXLoader === "undefined")
 
 // ---------- UTILS ----------
 const setStatus = (m)=>document.getElementById("status").textContent=m;
-const sleepMs = (ms)=>new Promise(r=>setTimeout(r,ms));
-const pick = (a)=>a[Math.floor(Math.random()*a.length)];
+const cache={};
 
 // ---------- GLOBALS ----------
 let scene,camera,renderer,clock,mixer,model,currentAction;
 let state="boot";
 const cam={radius:3,yaw:0,pitch:0.4,drift:false,target:new THREE.Vector3(0,1,0)};
-const cache={};
 
 // ---------- INIT ----------
 function initThree(){
   renderer=new THREE.WebGLRenderer({antialias:true,alpha:true});
-  renderer.outputColorSpace = THREE.SRGBColorSpace; // ✅ correct color output
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.setSize(window.innerWidth,window.innerHeight);
   document.body.appendChild(renderer.domElement);
 
@@ -35,11 +33,11 @@ function initThree(){
   camera=new THREE.PerspectiveCamera(45,window.innerWidth/window.innerHeight,0.1,100);
   camera.position.set(0,1.6,3);
 
-  // Softer balanced lighting
+  // Balanced soft lighting
   const hemi=new THREE.HemisphereLight(0xffffff,0x444444,0.6);
-  const key =new THREE.DirectionalLight(0xffffff,0.6);
+  const key =new THREE.DirectionalLight(0xffffff,0.45);
   key.position.set(2,4,3);
-  const fill=new THREE.DirectionalLight(0xffffff,0.3);
+  const fill=new THREE.DirectionalLight(0xffffff,0.25);
   fill.position.set(-2,2,-2);
   scene.add(hemi,key,fill);
 
@@ -50,7 +48,6 @@ function initThree(){
     renderer.setSize(window.innerWidth,window.innerHeight);
   });
 
-  // Optional orbit controls
   const controls=new THREE.OrbitControls(camera,renderer.domElement);
   controls.target.copy(cam.target);
   controls.update();
@@ -65,19 +62,21 @@ async function loadModel(){
   scene.add(fbx);
   model=fbx;
 
-  // --- Texture fix ---
+  // Load texture correctly
   const tex=await new THREE.TextureLoader().loadAsync(TEX_URL);
   tex.flipY=false;
-  tex.colorSpace = THREE.SRGBColorSpace; // ✅ correct color profile
+  tex.colorSpace = THREE.SRGBColorSpace;
 
   fbx.traverse(o=>{
     if(o.isMesh){
-      o.material.map=tex;
-      o.material.color.set(0xffffff);
-      o.material.metalness=0.0;
-      o.material.roughness=1.0;
-      o.material.envMapIntensity=0.4;
-      o.material.needsUpdate=true;
+      // Convert any shiny imported materials into clean, color-based lambert
+      o.material = new THREE.MeshStandardMaterial({
+        map: tex,
+        color: 0xffffff,
+        metalness: 0.0,       // remove metallic shine
+        roughness: 0.85,      // natural matte
+        emissive: 0x000000,
+      });
     }
   });
 
