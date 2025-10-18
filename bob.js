@@ -1,16 +1,34 @@
-console.log("🟢 Booting Bob (v6.3 — See-Bob-Now)…");
+console.log("🟢 Booting Bob (v6.3-fix — tolerant)…");
 
 const FBX_BASE = "https://pub-30bcc0b2a7044074a19efdef19f69857.r2.dev/models/";
 const BASE_RIG = "T-Pose.fbx";
 const START_ANIM = "Neutral Idle";
 
-if (typeof THREE === "undefined" || typeof FBXLoader === "undefined")
-  throw new Error("❌ THREE.js or FBXLoader missing.");
+// ---------- WAIT FOR GLOBALS ----------
+function waitForThree() {
+  return new Promise((resolve, reject) => {
+    let tries = 0;
+    const check = () => {
+      if (window.THREE && (window.FBXLoader || (window.THREE.FBXLoader))) {
+        if (!window.FBXLoader && window.THREE.FBXLoader)
+          window.FBXLoader = window.THREE.FBXLoader;
+        resolve();
+      } else if (tries++ < 60) {
+        setTimeout(check, 250); // wait up to ~15s total
+      } else {
+        reject(new Error("THREE.js or FBXLoader still not found after waiting."));
+      }
+    };
+    check();
+  });
+}
 
+// ---------- GLOBALS ----------
 let scene, camera, renderer, mixer, rigRoot;
-const clock = new THREE.Clock();
+const clock = new THREE.Clock ? new THREE.Clock() : null;
 
-function initThree() {
+// ---------- CORE ----------
+async function initThree() {
   renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.setSize(window.innerWidth, window.innerHeight);
@@ -35,7 +53,6 @@ function initThree() {
 }
 
 function buildDebugBob(rig) {
-  // Make a visible placeholder in case bones mismatch
   const body = new THREE.Mesh(
     new THREE.CapsuleGeometry(0.6, 1.8, 8, 16),
     new THREE.MeshStandardMaterial({ color: 0x00ff88 })
@@ -48,14 +65,12 @@ async function loadRig() {
   const loader = new FBXLoader();
   const rig = await loader.loadAsync(FBX_BASE + BASE_RIG);
   console.log("✅ Rig loaded:", rig);
-  rig.scale.setScalar(1); // full size
+  rig.scale.setScalar(1);
   rig.position.set(0, 0, 0);
   scene.add(rig);
   rigRoot = rig;
-
   buildDebugBob(rigRoot);
 
-  // Frame camera on Bob
   const box = new THREE.Box3().setFromObject(rigRoot);
   const size = box.getSize(new THREE.Vector3()).length();
   const center = box.getCenter(new THREE.Vector3());
@@ -82,22 +97,23 @@ async function play(name) {
 
 function animate() {
   requestAnimationFrame(animate);
-  mixer?.update(clock.getDelta());
+  mixer?.update(clock?.getDelta() ?? 0.016);
   renderer.render(scene, camera);
 }
 
-async function boot() {
+// ---------- BOOT ----------
+(async () => {
   document.getElementById("status").textContent = "Loading Bob...";
-  initThree();
   try {
+    await waitForThree();
+    console.log("✅ THREE + FBXLoader ready.");
+    await initThree();
     await loadRig();
     await play(START_ANIM);
     document.getElementById("status").textContent = "👂 Listening...";
+    animate();
   } catch (err) {
-    console.error(err);
+    console.error("❌ Boot error:", err);
     document.getElementById("status").textContent = "❌ Load error.";
   }
-  animate();
-}
-
-boot();
+})();
