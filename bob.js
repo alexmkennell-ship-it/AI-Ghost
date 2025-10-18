@@ -1,5 +1,5 @@
 // 🟢 Bob v8.7 — Full GitHub-Ready Cowboy
-import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.155.0/build/three.module.js";
+import { THREE } from "https://cdn.jsdelivr.net/npm/three@0.155.0/build/three.module.js";
 import { FBXLoader } from "https://cdn.jsdelivr.net/npm/three@0.155.0/examples/jsm/loaders/FBXLoader.js";
 import { OrbitControls } from "https://cdn.jsdelivr.net/npm/three@0.155.0/examples/jsm/controls/OrbitControls.js";
 
