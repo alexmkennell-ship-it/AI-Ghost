@@ -1,11 +1,11 @@
-console.log("🟢 Booting Bob (v5.6 Texture Fix)…");
+console.log("🟢 Booting Bob (v5.7 — Texture & Lighting Fix)…");
 
 // ---------- CONFIG ----------
 const WORKER_URL = "https://ghostaiv1.alexmkennell.workers.dev";
 const FBX_BASE   = "https://pub-30bcc0b2a7044074a19efdef19f69857.r2.dev/models/";
 const TEX_URL    = `${FBX_BASE}Boney_Bob_the_skeleto_1017235951_texture.png`;
 
-// ---------- PATCH ----------
+// ---------- VERIFY GLOBALS ----------
 if (typeof window.FBXLoader === "undefined" && window.THREE && THREE.FBXLoader) {
   window.FBXLoader = THREE.FBXLoader;
   console.log("🧩 FBXLoader patched to global scope.");
@@ -27,6 +27,7 @@ const cache={};
 // ---------- INIT ----------
 function initThree(){
   renderer=new THREE.WebGLRenderer({antialias:true,alpha:true});
+  renderer.outputColorSpace = THREE.SRGBColorSpace; // ✅ correct color output
   renderer.setSize(window.innerWidth,window.innerHeight);
   document.body.appendChild(renderer.domElement);
 
@@ -34,8 +35,9 @@ function initThree(){
   camera=new THREE.PerspectiveCamera(45,window.innerWidth/window.innerHeight,0.1,100);
   camera.position.set(0,1.6,3);
 
-  const hemi=new THREE.HemisphereLight(0xffffff,0x444444,0.7);
-  const key =new THREE.DirectionalLight(0xffffff,0.8);
+  // Softer balanced lighting
+  const hemi=new THREE.HemisphereLight(0xffffff,0x444444,0.6);
+  const key =new THREE.DirectionalLight(0xffffff,0.6);
   key.position.set(2,4,3);
   const fill=new THREE.DirectionalLight(0xffffff,0.3);
   fill.position.set(-2,2,-2);
@@ -66,21 +68,22 @@ async function loadModel(){
   // --- Texture fix ---
   const tex=await new THREE.TextureLoader().loadAsync(TEX_URL);
   tex.flipY=false;
+  tex.colorSpace = THREE.SRGBColorSpace; // ✅ correct color profile
 
   fbx.traverse(o=>{
     if(o.isMesh){
       o.material.map=tex;
-      o.material.color.set(0xffffff);   // no tint
-      o.material.metalness=0.0;         // not shiny
-      o.material.roughness=1.0;         // matte surface
-      o.material.envMapIntensity=0.4;   // slight reflection
+      o.material.color.set(0xffffff);
+      o.material.metalness=0.0;
+      o.material.roughness=1.0;
+      o.material.envMapIntensity=0.4;
       o.material.needsUpdate=true;
     }
   });
 
   mixer=new THREE.AnimationMixer(model);
 
-  // auto-fit camera
+  // Auto-fit camera
   const box=new THREE.Box3().setFromObject(model);
   const size=box.getSize(new THREE.Vector3()).length();
   const center=box.getCenter(new THREE.Vector3());
@@ -99,6 +102,7 @@ async function loadClip(name){
   cache[name]=clip;
   return clip;
 }
+
 async function play(name){
   if(!mixer)return;
   const clip=await loadClip(name);
@@ -127,7 +131,7 @@ function animate(){
   renderer.render(scene,camera);
 }
 
-// ---------- AUDIO-CLICK UNLOCK ----------
+// ---------- AUDIO CLICK UNLOCK ----------
 document.body.addEventListener("click",()=>{
   if(state==="boot"){ state="idle"; setStatus("👂 Listening..."); }
 },{once:true});
