@@ -1,4 +1,4 @@
-// bob.js — v5.2 "Global Loader Edition (Legacy)"
+// bob.js — v5.3 "Global Loader Edition (Legacy)"
 // ✅ Works with r146 global three.js + FBXLoader
 // ✅ FBX animation, voice, idle skits, and smooth camera
 console.log("🟢 Booting Bob (global legacy)…");
@@ -123,6 +123,200 @@ async function loadModel() {
   });
 
   mixer = new THREE.AnimationMixer(model);
+  return model.animations?.[0] ?? null;
+}
+
+function ensureFallbackClips() {
+  if (Object.keys(fallbackClips).length) {
+    return;
+  }
+
+  const idleYawTrack = new THREE.NumberKeyframeTrack(".rotation[y]", [0, 2.5, 5], [-0.12, 0.12, -0.12]);
+  const idleBobTrack = new THREE.NumberKeyframeTrack(".position[y]", [0, 2.5, 5], [0, 0.07, 0]);
+  fallbackClips["Neutral Idle"] = new THREE.AnimationClip("Neutral Idle", 5, [idleYawTrack, idleBobTrack]);
+
+  const breatheScale = new THREE.NumberKeyframeTrack(".scale[y]", [0, 1.2, 2.4], [1, 1.05, 1]);
+  fallbackClips["Breathing Idle"] = new THREE.AnimationClip("Breathing Idle", 2.4, [breatheScale]);
+
+  const lookAroundYaw = new THREE.NumberKeyframeTrack(".rotation[y]", [0, 1, 2, 3], [-0.35, 0.25, 0.35, -0.35]);
+  const lookAroundPitch = new THREE.NumberKeyframeTrack(".rotation[x]", [0, 1.5, 3], [0.03, -0.04, 0.03]);
+  fallbackClips["Looking Around"] = new THREE.AnimationClip("Looking Around", 3, [lookAroundYaw, lookAroundPitch]);
+
+  const talkingTrack = new THREE.NumberKeyframeTrack(".rotation[x]", [0, 0.2, 0.4, 0.6], [0, -0.08, 0.08, 0]);
+  fallbackClips["Talking"] = new THREE.AnimationClip("Talking", 0.6, [talkingTrack]);
+
+  const sleepingTrack = new THREE.NumberKeyframeTrack(".rotation[x]", [0, 1.5, 3], [0, 0.5, 0]);
+  fallbackClips["Sleeping Idle"] = new THREE.AnimationClip("Sleeping Idle", 3, [sleepingTrack]);
+
+  const wakingTrack = new THREE.NumberKeyframeTrack(".rotation[x]", [0, 0.4, 0.8], [0.5, 0.1, 0]);
+  fallbackClips["Waking"] = new THREE.AnimationClip("Waking", 0.8, [wakingTrack]);
+
+  const boredTrack = new THREE.NumberKeyframeTrack(".position[y]", [0, 1.5, 3], [0, -0.08, 0]);
+  fallbackClips["Bored"] = new THREE.AnimationClip("Bored", 3, [boredTrack]);
+
+  const sillyYaw = new THREE.NumberKeyframeTrack(".rotation[y]", [0, 0.4, 0.8, 1.2, 1.6], [0, 0.6, -0.6, 0.6, 0]);
+  const sillyPos = new THREE.NumberKeyframeTrack(".position[x]", [0, 0.4, 0.8, 1.2, 1.6], [0, 0.4, -0.4, 0.4, 0]);
+  fallbackClips["Silly Dancing"] = new THREE.AnimationClip("Silly Dancing", 1.6, [sillyYaw, sillyPos]);
+}
+
+function createFallbackModel(reason, options = {}) {
+  const { placeholder = false } = options;
+  if (reason) {
+    console.warn("⚠️ Falling back to procedural Bob due to:", reason);
+  }
+
+  if (!fallbackState.root) {
+    const cowboy = new THREE.Group();
+    cowboy.position.set(0, 0.9, 0);
+
+    const boneMaterial = new THREE.MeshStandardMaterial({ color: 0xfff2d4, roughness: 0.45, metalness: 0.05 });
+    const accentMaterial = new THREE.MeshStandardMaterial({ color: 0x87512a, roughness: 0.6, metalness: 0.1 });
+
+    const ground = new THREE.Mesh(new THREE.CircleGeometry(3.2, 40), new THREE.MeshStandardMaterial({ color: 0x1a1209, roughness: 0.9, metalness: 0.05 }));
+    ground.rotation.x = -Math.PI / 2;
+    ground.position.y = -1.4;
+    scene.add(ground);
+
+    const spine = new THREE.Mesh(new THREE.CapsuleGeometry(0.22, 1.2, 4, 16), boneMaterial);
+    spine.position.y = 0.5;
+    cowboy.add(spine);
+
+    const pelvis = new THREE.Mesh(new THREE.CapsuleGeometry(0.28, 0.4, 4, 12), boneMaterial);
+    pelvis.position.y = -0.1;
+    cowboy.add(pelvis);
+
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.28, 20, 20), boneMaterial);
+    head.position.y = 1.2;
+    cowboy.add(head);
+
+    const jaw = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.15, 0.2), boneMaterial);
+    jaw.position.set(0, 1.0, 0.08);
+    cowboy.add(jaw);
+
+    const hatBrim = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.42, 0.05, 24), accentMaterial);
+    hatBrim.position.y = 1.37;
+    cowboy.add(hatBrim);
+
+    const hatTop = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.28, 0.28, 24), accentMaterial);
+    hatTop.position.y = 1.5;
+    cowboy.add(hatTop);
+
+    const leftArm = new THREE.Mesh(new THREE.CapsuleGeometry(0.12, 0.7, 4, 12), boneMaterial);
+    leftArm.position.set(-0.45, 0.55, 0);
+    leftArm.rotation.z = Math.PI / 4;
+    cowboy.add(leftArm);
+
+    const rightArm = leftArm.clone();
+    rightArm.position.x = 0.45;
+    rightArm.rotation.z = -Math.PI / 4;
+    cowboy.add(rightArm);
+
+    const leftLeg = new THREE.Mesh(new THREE.CapsuleGeometry(0.14, 0.9, 4, 12), boneMaterial);
+    leftLeg.position.set(-0.18, -0.85, 0);
+    cowboy.add(leftLeg);
+
+    const rightLeg = leftLeg.clone();
+    rightLeg.position.x = 0.18;
+    cowboy.add(rightLeg);
+
+    const spur = new THREE.Mesh(new THREE.TorusGeometry(0.18, 0.04, 12, 24), accentMaterial);
+    spur.rotation.x = Math.PI / 2;
+    spur.position.set(-0.18, -1.3, -0.12);
+    cowboy.add(spur);
+    const spur2 = spur.clone();
+    spur2.position.x = 0.18;
+    cowboy.add(spur2);
+
+    scene.add(cowboy);
+    fallbackState.root = cowboy;
+    fallbackState.ground = ground;
+  } else {
+    if (scene.children.indexOf(fallbackState.root) === -1) {
+      scene.add(fallbackState.root);
+    }
+    if (fallbackState.ground && scene.children.indexOf(fallbackState.ground) === -1) {
+      scene.add(fallbackState.ground);
+    }
+  }
+
+  ensureFallbackClips();
+  usingFallback = true;
+  jawBone = null;
+  fingerBones = [];
+  focusBone = null;
+  model = fallbackState.root;
+  if (!fallbackState.mixer) {
+    fallbackState.mixer = new THREE.AnimationMixer(model);
+  }
+  mixer = fallbackState.mixer;
+  currentAction = null;
+
+  cam.target = new THREE.Vector3(0, 1.05, 0);
+  cam.radius = placeholder ? 4.9 : 4.4;
+  cam.pitch = 0.65;
+  cam.drift = false;
+
+  if (fallbackState.ground) {
+    fallbackState.ground.visible = true;
+  }
+
+  if (placeholder) {
+    setStatus("⏳ Loading Bob assets… showing fallback cowboy.");
+  } else {
+    setStatus("⚠️ Loaded fallback Bob. Animations simplified while original assets are unavailable.");
+  }
+
+  return model;
+}
+
+function disposeFallbackModel() {
+  const root = fallbackState.root;
+  const ground = fallbackState.ground;
+  const fallbackMixer = fallbackState.mixer;
+
+  if (!root && !ground) {
+    usingFallback = false;
+    return;
+  }
+
+  if (ground) {
+    scene.remove(ground);
+    if (ground.geometry) ground.geometry.dispose?.();
+    if (ground.material) {
+      const mats = Array.isArray(ground.material) ? ground.material : [ground.material];
+      mats.forEach((m) => m.dispose?.());
+    }
+  }
+
+  if (root) {
+    scene.remove(root);
+    root.traverse((obj) => {
+      if (obj.isMesh) {
+        obj.geometry?.dispose?.();
+        const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+        mats.forEach((m) => m?.dispose?.());
+      }
+    });
+  }
+
+  fallbackState.root = null;
+  fallbackState.ground = null;
+  fallbackState.mixer = null;
+  Object.keys(fallbackClips).forEach((k) => delete fallbackClips[k]);
+
+  if (mixer === fallbackMixer) {
+    mixer.stopAllAction?.();
+    mixer = null;
+  }
+  if (currentAction) {
+    currentAction.stop();
+    currentAction = null;
+  }
+  if (model === root) {
+    model = null;
+  }
+  usingFallback = false;
+  applyCameraDefaults();
 }
 
 function createFallbackModel(reason) {
@@ -383,6 +577,35 @@ async function boot() {
 
   await play("Neutral Idle");
   animate();
+
+  let neutralClip = null;
+
+  if (!loaderAvailable) {
+    if (typeof globalScope.THREE === "undefined") {
+      throw new Error("THREE.js failed to load; cannot render Bob or fallback geometry.");
+    }
+    createFallbackModel(new Error("Missing THREE or FBXLoader"));
+  } else {
+    createFallbackModel(undefined, { placeholder: true });
+    await play("Neutral Idle");
+    try {
+      neutralClip = await loadModel();
+      disposeFallbackModel();
+    } catch (err) {
+      console.error(err);
+      createFallbackModel(err);
+    }
+  }
+
+  if (!model) {
+    throw new Error("Failed to initialize Bob model.");
+  }
+
+  if (neutralClip) {
+    cache["Neutral Idle"] = neutralClip;
+  }
+
+  await play("Neutral Idle");
   state = "idle";
   if (usingFallback) {
     setStatus("⚠️ Using fallback Bob. 👂 Listening...");
