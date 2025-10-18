@@ -4,14 +4,18 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Bob the Bone Cowboy</title>
+
+  <!-- ✅ Load Three.js and FBXLoader first -->
+  <script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
+  <script src="https://unpkg.com/three@0.160.0/examples/js/loaders/FBXLoader.js"></script>
+
   <style>
-    :root { --fade-ms: 360ms; }
     html, body {
       height: 100%;
       margin: 0;
       background: radial-gradient(circle at center, #0b0b0b 50%, #000 100%);
       color: #b8ffb8;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      font-family: ui-monospace, monospace;
       overflow: hidden;
     }
     #status {
@@ -26,6 +30,7 @@
 </head>
 <body>
   <div id="status">Loading…</div>
+  <!-- ✅ Load Bob last -->
   <script src="./bob.js"></script>
 </body>
 </html>
