@@ -45,7 +45,7 @@ let scene, camera, renderer, clock, mixer;
 let model, currentAction = null;
 let jawBone = null, fingerBones = [], focusBone = null;
 let state = "boot", micLocked = false;
-let cam = { radius: 5.8, yaw: 0, pitch: 1.308996939, drift: true, target: new THREE.Vector3(0, 1.2, 0) };
+let cam = { radius: 5.8, yaw: 0, pitch: 1.308996939, drift: true, target: null };
 
 /////////////////////////////////////////////////////
 // FILE MAP
@@ -65,6 +65,9 @@ const FILES = {
 // INIT
 /////////////////////////////////////////////////////
 function initThree() {
+  if (!cam.target) {
+    cam.target = new THREE.Vector3(0, 1.2, 0);
+  }
   renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
   renderer.setSize(window.innerWidth, window.innerHeight);
   document.body.appendChild(renderer.domElement);
@@ -228,6 +231,7 @@ async function randomIdle() {
 /////////////////////////////////////////////////////
 async function boot() {
   setStatus("Initializing Bob...");
+  await ensureThreeAndFBXLoader();
   initThree();
   await loadModel();
   await play("Neutral Idle");
@@ -236,4 +240,7 @@ async function boot() {
   setStatus("👂 Listening...");
   randomIdle();
 }
-boot();
+boot().catch((err) => {
+  console.error(err);
+  setStatus("❌ Failed to load Bob. Check console for details.");
+});
