@@ -130,6 +130,10 @@ async function loadClip(name) {
 }
 
 async function play(name, fade = 0.4, loop = true) {
+  if (!mixer) {
+    console.warn(`Mixer unavailable; skipping animation "${name}".`);
+    return;
+  }
   const clip = await loadClip(name);
   if (!clip) return;
   const action = mixer.clipAction(clip);
