@@ -123,6 +123,7 @@ async function loadRig(){
   fbx.scale.setScalar(1);
 
   fbx.traverse(o=>{
+     console.log("MESH:", o.name);
     if (o.isMesh){
       o.material = chooseMaterialForName(o.name || "");
       // collect jaw morphs if present
