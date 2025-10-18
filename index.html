@@ -5,11 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Bob the Bone Cowboy</title>
 
-  <!-- ✅ Load global THREE (stable, global build) -->
-  <script src="https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/build/three.min.js"></script>
-
-  <!-- ✅ Load the classic non-module FBXLoader -->
-  <script src="https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/js/loaders/FBXLoader.js"></script>
+  <!-- ✅ Force global THREE + FBXLoader -->
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/FBXLoader.js"></script>
 
   <style>
     html, body {
@@ -20,7 +18,6 @@
       color: #b8ffb8;
       font-family: monospace;
     }
-    canvas { display: block; }
     #status {
       position: fixed;
       bottom: 10px;
@@ -29,24 +26,26 @@
       opacity: 0.9;
       font-size: 1rem;
     }
+    canvas { display: block; }
   </style>
 </head>
 <body>
   <div id="status">Loading Bob…</div>
 
-  <!-- ✅ Load Bob only after THREE & FBXLoader exist -->
+  <!-- ✅ Bob loads AFTER global THREE/FBXLoader confirmed -->
   <script>
-    (function wait() {
+    function loadBob() {
+      console.log("✅ THREE:", !!window.THREE, "FBXLoader:", !!window.FBXLoader);
       if (window.THREE && window.FBXLoader) {
-        console.log("🚀 THREE & FBXLoader loaded — booting Bob.js");
         const s = document.createElement("script");
-        s.src = "./bob.js";
+        s.src = "./bob.js?v=" + Date.now(); // cache bust
         document.body.appendChild(s);
       } else {
-        console.log("⏳ Waiting for THREE / FBXLoader…");
-        setTimeout(wait, 250);
+        console.warn("⏳ Waiting for THREE / FBXLoader…");
+        setTimeout(loadBob, 500);
       }
-    })();
+    }
+    window.addEventListener("load", loadBob);
   </script>
 </body>
 </html>
