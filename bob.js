@@ -1,8 +1,8 @@
 console.log("🤠 Booting Bob (v6.9 — He’s Right There, Partner)…");
 
 // ✅ Correct Worker and model path
-const WORKER_URL = "https://ghostaiv1.alexmkennell.workers.dev";
-const FBX_BASE   = WORKER_URL + "/bob-animations/models/";
+const WORKER_URL = "https://pub-30bcc0b2a7044074a19efdef19f69857.r2.dev";
+const FBX_BASE   = WORKER_URL + "/models/";
 const BASE_RIG   = "T-Pose.fbx";      // confirm case-sensitive name in R2
 const START_ANIM = "Neutral Idle";
 
