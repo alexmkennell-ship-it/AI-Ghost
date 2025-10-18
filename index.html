@@ -3,16 +3,17 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Bob the Bone Cowboy</title>
+  <title>Bob the Bone Cowboy v5.5</title>
 
-  <!-- ✅ fflate for FBXLoader compression support -->
-<script src="https://cdn.jsdelivr.net/npm/fflate@0.8.2/umd/index.js"></script>
-
-  <!-- ✅ Load Three.js (non-module legacy global) -->
+  <!-- Three.js -->
   <script src="https://cdn.jsdelivr.net/gh/mrdoob/three.js@r146/build/three.min.js"></script>
 
-  <!-- ✅ Load FBXLoader that attaches globally -->
+  <!-- fflate (needed for FBXLoader) -->
+  <script src="https://cdn.jsdelivr.net/npm/fflate@0.8.2/umd/index.js"></script>
+
+  <!-- FBX + Orbit controls -->
   <script src="https://cdn.jsdelivr.net/gh/mrdoob/three.js@r146/examples/js/loaders/FBXLoader.js"></script>
+  <script src="https://cdn.jsdelivr.net/gh/mrdoob/three.js@r146/examples/js/controls/OrbitControls.js"></script>
 
   <style>
     body {
@@ -34,9 +35,8 @@
   </style>
 </head>
 <body>
-  <div id="status">Loading Bob...</div>
+  <div id="status">Loading Bob…</div>
 
-  <!-- ✅ Load Bob -->
-  <script src="./bob.js?v=5.3"></script>
+  <script src="./bob.js?v=5.5"></script>
 </body>
 </html>
