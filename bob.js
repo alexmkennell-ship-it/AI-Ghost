@@ -1,10 +1,12 @@
 /*
- * Bob.js (debug version)
+ * Bob.js (debug build with URL encoding)
  *
  * This script loads a 3D cowboy rig and its animations from your
  * Cloudflare R2 bucket, applies a fallback if the rig fails, and
  * forces all meshes to render as bright yellow wireframes so you can
- * verify the geometry. It uses a fixed camera position.
+ * verify the geometry. It uses encodeURIComponent on file names to
+ * handle spaces and other special characters. A fixed camera
+ * position is used to simplify framing and debugging.
  */
 
 console.log("🟢 Booting Bob (debug build)…");
@@ -13,7 +15,7 @@ console.log("🟢 Booting Bob (debug build)…");
 const WORKER_URL = "https://pub-30bcc0b2a7044074a19efdef19f69857.r2.dev";
 const FBX_BASE   = `${WORKER_URL}/models/`;
 
-// Filenames (case‑sensitive!)
+// Filenames (case‑sensitive!). Use encodeURIComponent when building URLs.
 const BASE_RIG   = "T-Pose.fbx";
 const START_ANIM = "Neutral Idle";
 
@@ -61,10 +63,10 @@ function initThree() {
   camera.position.set(0, 1.6, 4);
   camera.lookAt(new THREE.Vector3(0, 1, 0));
 
-  const hemi  = new THREE.HemisphereLight(0xffffff, 0x444444, 0.8);
-  const dir   = new THREE.DirectionalLight(0xffffff, 0.8);
+  const hemi = new THREE.HemisphereLight(0xffffff, 0x444444, 0.8);
+  const dir  = new THREE.DirectionalLight(0xffffff, 0.8);
   dir.position.set(3, 6, 3);
-  const amb   = new THREE.AmbientLight(0xffffff, 0.3);
+  const amb  = new THREE.AmbientLight(0xffffff, 0.3);
   scene.add(hemi, dir, amb);
 
   // Optional ground plane; comment out to remove the grey bar.
@@ -110,12 +112,15 @@ function addSkeletonHelper(rig) {
 async function loadRig(useFallback = false) {
   const loader = new FBXLoader();
   loader.setCrossOrigin("anonymous");
-  const url = useFallback ? FALLBACK_RIG_URL : FBX_BASE + BASE_RIG;
+  const url = useFallback
+    ? FALLBACK_RIG_URL
+    : FBX_BASE + encodeURIComponent(BASE_RIG);
   try {
     const rig = await loader.loadAsync(url);
     console.log("✅ Rig loaded from", url);
-    rig.scale.setScalar(useFallback ? 0.02 : 0.02); // tweak if needed
-    rig.position.set(0, -1, 0);                      // drop onto the ground plane
+    // Use small scale to fit typical models; adjust if needed.
+    rig.scale.setScalar(useFallback ? 0.02 : 0.02);
+    rig.position.set(0, -1, 0);
     scene.add(rig);
     rigRoot = rig;
     applyDebugMaterial(rigRoot);
@@ -133,12 +138,13 @@ async function loadRig(useFallback = false) {
 }
 
 /**
- * Load an animation file from the base URL.
+ * Load an animation file from the base URL. Uses encodeURIComponent
+ * on the animation name to handle spaces and special characters.
  */
 async function loadAnim(name) {
   const loader = new FBXLoader();
   loader.setCrossOrigin("anonymous");
-  const url = FBX_BASE + name + ".fbx";
+  const url = FBX_BASE + encodeURIComponent(name) + ".fbx";
   const fbx = await loader.loadAsync(url);
   console.log("🎬 Animation loaded:", url);
   return fbx.animations[0];
@@ -164,7 +170,9 @@ async function play(name) {
  */
 function animate() {
   requestAnimationFrame(animate);
-  mixer?.update(clock.getDelta());
+  if (mixer) {
+    mixer.update(clock.getDelta());
+  }
   renderer.render(scene, camera);
 }
 
