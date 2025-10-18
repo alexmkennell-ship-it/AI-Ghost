@@ -1,4 +1,4 @@
-console.log("🟢 Booting Bob (v5.8 — Color & Reflection Fix)…");
+console.log("🟢 Booting Bob (v5.9 — Final Texture Color Fix)…");
 
 // ---------- CONFIG ----------
 const WORKER_URL = "https://ghostaiv1.alexmkennell.workers.dev";
@@ -33,9 +33,9 @@ function initThree(){
   camera=new THREE.PerspectiveCamera(45,window.innerWidth/window.innerHeight,0.1,100);
   camera.position.set(0,1.6,3);
 
-  // Balanced soft lighting
-  const hemi=new THREE.HemisphereLight(0xffffff,0x444444,0.6);
-  const key =new THREE.DirectionalLight(0xffffff,0.45);
+  // Softer realistic lighting
+  const hemi=new THREE.HemisphereLight(0xffffff,0x444444,0.5);
+  const key =new THREE.DirectionalLight(0xffffff,0.4);
   key.position.set(2,4,3);
   const fill=new THREE.DirectionalLight(0xffffff,0.25);
   fill.position.set(-2,2,-2);
@@ -62,21 +62,18 @@ async function loadModel(){
   scene.add(fbx);
   model=fbx;
 
-  // Load texture correctly
+  // Load texture and force color-only interpretation
   const tex=await new THREE.TextureLoader().loadAsync(TEX_URL);
   tex.flipY=false;
   tex.colorSpace = THREE.SRGBColorSpace;
 
   fbx.traverse(o=>{
     if(o.isMesh){
-      // Convert any shiny imported materials into clean, color-based lambert
-      o.material = new THREE.MeshStandardMaterial({
+      o.material = new THREE.MeshLambertMaterial({
         map: tex,
         color: 0xffffff,
-        metalness: 0.0,       // remove metallic shine
-        roughness: 0.85,      // natural matte
-        emissive: 0x000000,
       });
+      o.material.needsUpdate=true;
     }
   });
 
