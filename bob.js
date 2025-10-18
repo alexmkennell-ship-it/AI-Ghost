@@ -1,4 +1,4 @@
-// 🟢 Bob v8.4 — Real Cowboy Render + Stable Loader
+// 🟢 Bob v8.5 — GitHub-Friendly, CDN-Resolved Cowboy
 
 import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.155.0/build/three.module.js";
 import { FBXLoader } from "https://cdn.jsdelivr.net/npm/three@0.155.0/examples/jsm/loaders/FBXLoader.js";
@@ -11,7 +11,37 @@ const TEXTURE_URL = `${FBX_BASE}Boney_Bob_the_skeleto_1017235951_texture.png`;
 let scene, camera, renderer, clock, mixer, model, currentAction;
 let recognition, asleep = false, isSpeaking = false;
 
-// ---------- SETUP ----------
+// ---------- 3-SECOND LOAD DELAY ----------
+setTimeout(() => {
+  console.log("🐎 GitHub delay complete — booting Bob...");
+  initBob();
+}, 3000);
+
+// ---------- MAIN BOOT ----------
+async function initBob() {
+  console.log("🟢 Bob v8.5 init");
+
+  try {
+    initThree();
+    await loadRig();
+    await play("Neutral Idle");
+
+    document.body.addEventListener(
+      "click",
+      () => {
+        if (!recognition) initSpeech();
+        console.log("🎤 Mic activated");
+      },
+      { once: true }
+    );
+
+    animate();
+  } catch (err) {
+    console.error(err);
+  }
+}
+
+// ---------- SCENE SETUP ----------
 function initThree() {
   renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
   renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -22,7 +52,6 @@ function initThree() {
   camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
   camera.position.set(0, 1.6, 4);
 
-  // Lights
   const hemi = new THREE.HemisphereLight(0xffffff, 0x444444, 0.65);
   const key = new THREE.DirectionalLight(0xffffff, 0.75);
   key.position.set(2, 4, 3);
@@ -69,12 +98,11 @@ async function applyTexture(fbx) {
   });
 }
 
-// ---------- MODEL ----------
+// ---------- LOAD MODEL ----------
 async function loadRig() {
   const loader = new FBXLoader();
   const fbx = await loader.loadAsync(FBX_BASE + "T-Pose.fbx");
   fbx.scale.setScalar(1);
-  fbx.position.set(0, 0, 0);
   scene.add(fbx);
   model = fbx;
   await applyTexture(fbx);
@@ -100,7 +128,6 @@ async function loadClip(name) {
 async function play(name) {
   if (!mixer) return;
   const clip = await loadClip(name);
-  if (!clip) return;
   const action = mixer.clipAction(clip);
   action.reset();
   action.setLoop(THREE.LoopRepeat, Infinity);
@@ -110,7 +137,7 @@ async function play(name) {
   console.log("🤠 Bob action:", name);
 }
 
-// ---------- SPEECH ----------
+// ---------- AI & SPEECH ----------
 async function say(text) {
   if (isSpeaking) return;
   isSpeaking = true;
@@ -174,33 +201,10 @@ function initSpeech() {
   console.log("🟢 Bob: Listening...");
 }
 
-// ---------- ANIMATION LOOP ----------
+// ---------- LOOP ----------
 function animate() {
   requestAnimationFrame(animate);
   const dt = clock.getDelta();
   mixer?.update(dt);
   renderer.render(scene, camera);
 }
-
-// ---------- BOOT ----------
-(async () => {
-  console.log("🟢 Bob v8.4 init");
-  try {
-    initThree();
-    await loadRig();
-    await play("Neutral Idle");
-
-    document.body.addEventListener(
-      "click",
-      () => {
-        if (!recognition) initSpeech();
-        console.log("🎤 Mic activated");
-      },
-      { once: true }
-    );
-
-    animate();
-  } catch (err) {
-    console.error(err);
-  }
-})();
