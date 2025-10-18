@@ -401,4 +401,3 @@ async function boot() {
 window.addEventListener("DOMContentLoaded", () => {
   boot();
 });
-})(); // closes the async wrapper at the top
