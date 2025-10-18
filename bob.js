@@ -20,8 +20,6 @@ const TEX_URL = `${FBX_BASE}Boney_Bob_the_skeleto_1017235951_texture.png`;
   const { FBXLoader } = await import("https://unpkg.com/three@0.160.0/examples/jsm/loaders/FBXLoader.js");
   THREE.FBXLoader = FBXLoader;
 
-  // --- now load Bob
-  await import("./bob.js");
 })();
 
 /////////////////////////////////////////////////////
