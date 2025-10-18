@@ -1,5 +1,4 @@
-// 🟢 Bob v8.5 — GitHub-Friendly, CDN-Resolved Cowboy
-
+// 🟢 Bob v8.6 — Fixed for GitHub Pages (pure browser-compatible)
 import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.155.0/build/three.module.js";
 import { FBXLoader } from "https://cdn.jsdelivr.net/npm/three@0.155.0/examples/jsm/loaders/FBXLoader.js";
 import { OrbitControls } from "https://cdn.jsdelivr.net/npm/three@0.155.0/examples/jsm/controls/OrbitControls.js";
@@ -19,13 +18,11 @@ setTimeout(() => {
 
 // ---------- MAIN BOOT ----------
 async function initBob() {
-  console.log("🟢 Bob v8.5 init");
-
+  console.log("🟢 Bob v8.6 init");
   try {
     initThree();
     await loadRig();
     await play("Neutral Idle");
-
     document.body.addEventListener(
       "click",
       () => {
@@ -34,14 +31,13 @@ async function initBob() {
       },
       { once: true }
     );
-
     animate();
   } catch (err) {
-    console.error(err);
+    console.error("❌ Boot failed:", err);
   }
 }
 
-// ---------- SCENE SETUP ----------
+// ---------- THREE.JS SETUP ----------
 function initThree() {
   renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
   renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -98,7 +94,7 @@ async function applyTexture(fbx) {
   });
 }
 
-// ---------- LOAD MODEL ----------
+// ---------- MODEL ----------
 async function loadRig() {
   const loader = new FBXLoader();
   const fbx = await loader.loadAsync(FBX_BASE + "T-Pose.fbx");
@@ -137,7 +133,7 @@ async function play(name) {
   console.log("🤠 Bob action:", name);
 }
 
-// ---------- AI & SPEECH ----------
+// ---------- AI SPEECH ----------
 async function say(text) {
   if (isSpeaking) return;
   isSpeaking = true;
@@ -174,7 +170,7 @@ async function askBob(prompt) {
   await say(reply);
 }
 
-// ---------- SPEECH RECOGNITION ----------
+// ---------- MIC ----------
 function initSpeech() {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   recognition = new SR();
@@ -196,7 +192,6 @@ function initSpeech() {
   recognition.onend = () => {
     if (!isSpeaking) recognition.start();
   };
-
   recognition.start();
   console.log("🟢 Bob: Listening...");
 }
