@@ -6,8 +6,14 @@ const FBX_BASE   = WORKER_URL + "/bob-animations/models/";
 const BASE_RIG   = "T-Pose.fbx";      // confirm case-sensitive name in R2
 const START_ANIM = "Neutral Idle";
 
+// Fallback asset (Three.js public demo) in case the worker blocks us (403, etc.).
+const FALLBACK_RIG_URL = "https://threejs.org/examples/models/fbx/Samba%20Dancing.fbx";
+const FALLBACK_REASON  = "Bob's CDN returned an error (likely 403 Forbidden). Showing fallback rig.";
+
 let scene, camera, renderer, mixer, rigRoot, clock;
 let state = "idle";
+let usingFallbackRig = false;
+let fallbackClip = null;
 
 // -------- Wait for THREE + FBXLoader --------
 async function waitForGlobals() {
@@ -53,9 +59,9 @@ function initThree() {
 }
 
 // -------- Load Rig from Worker --------
-async function loadRig() {
+async function loadRig(useFallback = false) {
   const loader = new FBXLoader();
-  const rigURL = FBX_BASE + BASE_RIG;
+  const rigURL = useFallback ? FALLBACK_RIG_URL : FBX_BASE + BASE_RIG;
   console.log("🪶 Loading rig from:", rigURL);
 
   try {
@@ -85,13 +91,29 @@ async function loadRig() {
     camera.lookAt(center);
 
     mixer = new THREE.AnimationMixer(rig);
+
+    if (useFallback) {
+      usingFallbackRig = true;
+      fallbackClip = (rig.animations && rig.animations[0]) || null;
+      setStatus(FALLBACK_REASON);
+    }
   } catch (err) {
     console.error("❌ Failed to load FBX:", err);
+    if (!useFallback) {
+      setStatus("Failed to load Bob from CDN. Retrying with fallback rig…");
+      return loadRig(true);
+    }
+    setStatus("Could not load fallback rig either. Check network console for details.");
+    throw err;
   }
 }
 
 // -------- Load and Play Animation --------
 async function loadAnim(name) {
+  if (usingFallbackRig && fallbackClip) {
+    console.log("🎞️ Using fallback clip embedded in the rig.");
+    return fallbackClip;
+  }
   const loader = new FBXLoader();
   const fbxURL = FBX_BASE + name + ".fbx";
   console.log("🎞️ Loading animation:", fbxURL);
@@ -121,11 +143,18 @@ function animate() {
 
 // -------- Boot --------
 (async () => {
-  document.getElementById("status").textContent = "Loading Bob...";
+  setStatus("Loading Bob...");
   await waitForGlobals();
   initThree();
   await loadRig();
   await play(START_ANIM);
-  document.getElementById("status").textContent = "👂 Listening...";
+  if (!usingFallbackRig) {
+    setStatus("👂 Listening...");
+  }
   animate();
 })();
+
+function setStatus(text) {
+  const el = document.getElementById("status");
+  if (el) el.textContent = text;
+}
