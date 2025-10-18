@@ -21,7 +21,7 @@ const TEX_URL = `${FBX_BASE}Boney_Bob_the_skeleto_1017235951_texture.png`;
   THREE.FBXLoader = FBXLoader;
 
   // --- now load Bob
-  await import("./bob_core.js");
+  await import("./bob.js");
 })();
 
 /////////////////////////////////////////////////////
