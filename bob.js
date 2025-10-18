@@ -1,4 +1,4 @@
-// 🟢 Bob v8.6 — Fixed for GitHub Pages (pure browser-compatible)
+// 🟢 Bob v8.7 — Full GitHub-Ready Cowboy
 import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.155.0/build/three.module.js";
 import { FBXLoader } from "https://cdn.jsdelivr.net/npm/three@0.155.0/examples/jsm/loaders/FBXLoader.js";
 import { OrbitControls } from "https://cdn.jsdelivr.net/npm/three@0.155.0/examples/jsm/controls/OrbitControls.js";
@@ -9,33 +9,6 @@ const TEXTURE_URL = `${FBX_BASE}Boney_Bob_the_skeleto_1017235951_texture.png`;
 
 let scene, camera, renderer, clock, mixer, model, currentAction;
 let recognition, asleep = false, isSpeaking = false;
-
-// ---------- 3-SECOND LOAD DELAY ----------
-setTimeout(() => {
-  console.log("🐎 GitHub delay complete — booting Bob...");
-  initBob();
-}, 3000);
-
-// ---------- MAIN BOOT ----------
-async function initBob() {
-  console.log("🟢 Bob v8.6 init");
-  try {
-    initThree();
-    await loadRig();
-    await play("Neutral Idle");
-    document.body.addEventListener(
-      "click",
-      () => {
-        if (!recognition) initSpeech();
-        console.log("🎤 Mic activated");
-      },
-      { once: true }
-    );
-    animate();
-  } catch (err) {
-    console.error("❌ Boot failed:", err);
-  }
-}
 
 // ---------- THREE.JS SETUP ----------
 function initThree() {
@@ -77,7 +50,7 @@ async function applyTexture(fbx) {
   tex.flipY = false;
   tex.colorSpace = THREE.SRGBColorSpace;
 
-  fbx.traverse(o => {
+  fbx.traverse((o) => {
     if (o.isMesh) {
       o.material = new THREE.MeshStandardMaterial({
         map: tex,
@@ -87,7 +60,7 @@ async function applyTexture(fbx) {
         emissive: o.name.toLowerCase().includes("eye")
           ? new THREE.Color(0x00ff66)
           : new THREE.Color(0x000000),
-        emissiveIntensity: o.name.toLowerCase().includes("eye") ? 0.15 : 0
+        emissiveIntensity: o.name.toLowerCase().includes("eye") ? 0.15 : 0,
       });
       o.material.needsUpdate = true;
     }
@@ -142,7 +115,7 @@ async function say(text) {
     const resp = await fetch(`${WORKER_URL}/tts`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text, voice: "onyx" })
+      body: JSON.stringify({ text, voice: "onyx" }),
     });
     const blob = await resp.blob();
     const url = URL.createObjectURL(blob);
@@ -162,7 +135,7 @@ async function askBob(prompt) {
   const resp = await fetch(WORKER_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ prompt })
+    body: JSON.stringify({ prompt }),
   });
   const data = await resp.json();
   const reply = data.reply || "Well shoot, reckon I’m tongue-tied, partner.";
@@ -177,7 +150,7 @@ function initSpeech() {
   recognition.continuous = true;
   recognition.lang = "en-US";
 
-  recognition.onresult = e => {
+  recognition.onresult = (e) => {
     const text = e.results[e.results.length - 1][0].transcript.trim().toLowerCase();
     console.log("🗣️ You said:", text);
     if (text.includes("hey bob") && asleep) {
@@ -203,3 +176,30 @@ function animate() {
   mixer?.update(dt);
   renderer.render(scene, camera);
 }
+
+// ---------- MAIN BOOT SEQUENCE ----------
+async function initBob() {
+  console.log("🟢 Bob v8.7 init");
+  try {
+    initThree();
+    await loadRig();
+    await play("Neutral Idle");
+    document.body.addEventListener(
+      "click",
+      () => {
+        if (!recognition) initSpeech();
+        console.log("🎤 Mic activated");
+      },
+      { once: true }
+    );
+    animate();
+  } catch (err) {
+    console.error("❌ Boot failed:", err);
+  }
+}
+
+// ---------- 3-SECOND GITHUB DELAY ----------
+setTimeout(() => {
+  console.log("🐎 GitHub delay complete — booting Bob...");
+  initBob();
+}, 3000);
