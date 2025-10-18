@@ -13,9 +13,22 @@ const TEX_URL = `${FBX_BASE}Boney_Bob_the_skeleto_1017235951_texture.png`;
 /////////////////////////////////////////////////////
 // VERIFY GLOBALS
 /////////////////////////////////////////////////////
-if (typeof THREE === "undefined" || typeof FBXLoader === "undefined") {
+const globalScope = typeof window !== "undefined" ? window : globalThis;
+const hasThree = typeof globalScope.THREE !== "undefined";
+const hasFBXOnThree = hasThree && typeof globalScope.THREE.FBXLoader !== "undefined";
+const hasGlobalFBX = typeof globalScope.FBXLoader !== "undefined";
+
+if (!hasThree || (!hasFBXOnThree && !hasGlobalFBX)) {
   console.error("❌ THREE.js or FBXLoader not loaded globally. Check script order in HTML.");
   throw new Error("Missing THREE or FBXLoader");
+}
+
+const FBXLoader = hasFBXOnThree
+  ? globalScope.THREE.FBXLoader
+  : globalScope.FBXLoader;
+
+if (!hasFBXOnThree && hasGlobalFBX) {
+  globalScope.THREE.FBXLoader = FBXLoader;
 }
 
 console.log("✅ THREE.js + FBXLoader detected.");
