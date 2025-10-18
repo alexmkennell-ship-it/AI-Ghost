@@ -3,7 +3,7 @@ console.log("🤠 Booting Bob (v6.9+)…");
 // Base URL for your R2 bucket (public and CORS‑enabled)
 const WORKER_URL = "https://pub-30bcc0b2a7044074a19efdef19f69857.r2.dev";
 const FBX_BASE   = WORKER_URL + "/models/";
-const BASE_RIG   = "T-Pose.fbx";
+const BASE_RIG   = "Neutral Idle.fbx";
 const START_ANIM = "Neutral Idle";
 
 // Fallback asset from Three.js demos
