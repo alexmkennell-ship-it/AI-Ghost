@@ -1,167 +1,159 @@
-/*
- * Bob.js (idle rig version)
- *
- * This script loads a 3D rig and animation from your Cloudflare R2 bucket.
- * To avoid issues with a missing or empty T‑pose file, the base rig is now
- * set to the same FBX file used for the “Neutral Idle” animation. File names
- * are URL‑encoded with encodeURIComponent to handle spaces. A visible
- * wireframe material and skeleton helper are applied for debugging so you
- * can verify that geometry is present. If the rig fails to load, the
- * script falls back to the Samba dancer from the Three.js examples.
- */
+console.log("🟢 Booting Bob (v6.0 — Final Cowboy Edition)…");
 
-console.log("🟢 Booting Bob (idle rig)…");
+// ---------- CONFIG ----------
+const WORKER_URL = "https://ghostaiv1.alexmkennell.workers.dev";
+const FBX_BASE   = "https://pub-30bcc0b2a7044074a19efdef19f69857.r2.dev/models/";
+const TEX_URL    = `${FBX_BASE}Boney_Bob_the_skeleto_1017235951_texture.png`;
 
-// Base URL pointing at your public R2 bucket. Ensure CORS is enabled.
-const WORKER_URL = "https://pub-30bcc0b2a7044074a19efdef19f69857.r2.dev";
-const FBX_BASE   = `${WORKER_URL}/models/`;
-
-// Use the idle FBX as the base rig. Names are case‑sensitive.
-const BASE_RIG   = "Neutral Idle.fbx";
-// Play the idle animation on load; omit or set to null to skip.
-const START_ANIM = "Neutral Idle";
-
-// Fallback rig from the Three.js examples (always public)
-const FALLBACK_RIG_URL = "https://threejs.org/examples/models/fbx/Samba%20Dancing.fbx";
-
-let scene, camera, renderer, mixer, rigRoot;
-const clock = new THREE.Clock();
-
-function waitForThree() {
-  return new Promise((resolve, reject) => {
-    let tries = 0;
-    const check = () => {
-      if (window.THREE && (window.FBXLoader || (window.THREE.FBXLoader))) {
-        if (!window.FBXLoader && window.THREE.FBXLoader) {
-          window.FBXLoader = window.THREE.FBXLoader;
-        }
-        resolve();
-      } else if (tries++ < 60) {
-        setTimeout(check, 250);
-      } else {
-        reject(new Error("THREE.js or FBXLoader still not found after waiting."));
-      }
-    };
-    check();
-  });
+// ---------- VERIFY GLOBALS ----------
+if (typeof window.FBXLoader === "undefined" && window.THREE && THREE.FBXLoader) {
+  window.FBXLoader = THREE.FBXLoader;
+  console.log("🧩 FBXLoader patched to global scope.");
 }
+if (typeof THREE === "undefined" || typeof FBXLoader === "undefined")
+  throw new Error("❌ THREE.js or FBXLoader missing.");
 
-function initThree() {
-  renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-  renderer.outputEncoding = THREE.sRGBEncoding;
-  renderer.setSize(window.innerWidth, window.innerHeight);
+// ---------- UTILS ----------
+const setStatus = (m)=>document.getElementById("status").textContent=m;
+const cache={};
+
+// ---------- GLOBALS ----------
+let scene,camera,renderer,clock,mixer,model,currentAction;
+let state="boot";
+const cam={radius:3.5,yaw:0,pitch:0.4,drift:false,target:new THREE.Vector3(0,1,0)};
+
+// ---------- INIT ----------
+function initThree(){
+  renderer=new THREE.WebGLRenderer({antialias:true,alpha:true});
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.setSize(window.innerWidth,window.innerHeight);
   document.body.appendChild(renderer.domElement);
 
-  scene = new THREE.Scene();
+  scene=new THREE.Scene();
+  camera=new THREE.PerspectiveCamera(45,window.innerWidth/window.innerHeight,0.1,100);
+  camera.position.set(0,1.6,4);
 
-  camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
-  camera.position.set(0, 1.6, 4);
-  camera.lookAt(new THREE.Vector3(0, 1, 0));
+  // Soft 3-point lighting setup
+  const hemi=new THREE.HemisphereLight(0xffffff,0x444444,0.45);
+  const key =new THREE.DirectionalLight(0xffffff,0.55);
+  key.position.set(2,4,3);
+  const fill=new THREE.DirectionalLight(0xffffff,0.25);
+  fill.position.set(-2,2,-2);
+  const rim =new THREE.DirectionalLight(0xffffff,0.3);
+  rim.position.set(0,3,-3);
+  scene.add(hemi,key,fill,rim);
 
-  const hemi = new THREE.HemisphereLight(0xffffff, 0x444444, 0.8);
-  const dir  = new THREE.DirectionalLight(0xffffff, 0.8);
-  dir.position.set(3, 6, 3);
-  const amb  = new THREE.AmbientLight(0xffffff, 0.3);
-  scene.add(hemi, dir, amb);
+  clock=new THREE.Clock();
+  window.addEventListener("resize",()=>{
+    camera.aspect=window.innerWidth/window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth,window.innerHeight);
+  });
 
-  // Optional ground plane; comment out to remove the grey bar.
-  const ground = new THREE.Mesh(
-    new THREE.CircleGeometry(5, 64),
-    new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 1 })
-  );
-  ground.rotation.x = -Math.PI / 2;
-  ground.position.y = -1;
-  scene.add(ground);
+  const controls=new THREE.OrbitControls(camera,renderer.domElement);
+  controls.target.copy(cam.target);
+  controls.update();
 }
 
-function applyDebugMaterial(rig) {
-  rig.traverse(obj => {
-    if (obj.isMesh) {
-      obj.material = new THREE.MeshBasicMaterial({
-        color: 0xffff00,
-        wireframe: true
+// ---------- MODEL LOAD ----------
+async function loadModel(){
+  const loader=new FBXLoader();
+
+  // 🎯 Load base rig (your mesh only)
+  const fbx=await loader.loadAsync(FBX_BASE+"T-Pose.fbx");
+  fbx.scale.setScalar(0.01); // Mixamo FBXs are huge; scale down
+  fbx.position.set(0,0,0);
+  scene.add(fbx);
+  model=fbx;
+
+  // 🖌 Load and apply texture properly
+  const tex=await new THREE.TextureLoader().loadAsync(TEX_URL);
+  tex.flipY=false;
+  tex.colorSpace = THREE.SRGBColorSpace;
+
+  fbx.traverse(o=>{
+    if(o.isMesh){
+      o.material = new THREE.MeshLambertMaterial({
+        map: tex,
+        color: 0xffffff,
+        side: THREE.DoubleSide
       });
-      obj.visible = true;
+      o.material.needsUpdate=true;
     }
   });
+
+  mixer=new THREE.AnimationMixer(model);
+
+  // Auto-fit camera
+  const box=new THREE.Box3().setFromObject(model);
+  const size=box.getSize(new THREE.Vector3()).length();
+  const center=box.getCenter(new THREE.Vector3());
+  camera.position.copy(center.clone().add(new THREE.Vector3(size/1.5,size/2.5,size/1.5)));
+  camera.lookAt(center);
+
+  return model;
 }
 
-function addSkeletonHelper(rig) {
-  const helper = new THREE.SkeletonHelper(rig);
-  helper.material.linewidth = 2;
-  helper.material.color.set(0xff00ff);
-  scene.add(helper);
+// ---------- ANIMATION ----------
+async function loadClip(name){
+  if(cache[name])return cache[name];
+  const loader=new FBXLoader();
+  const fbx=await loader.loadAsync(FBX_BASE+name+".fbx");
+  const clip=fbx.animations[0];
+  cache[name]=clip;
+  return clip;
 }
 
-async function loadRig(useFallback = false) {
-  const loader = new FBXLoader();
-  loader.setCrossOrigin("anonymous");
-  const url = useFallback ? FALLBACK_RIG_URL : FBX_BASE + encodeURIComponent(BASE_RIG);
-  try {
-    const rig = await loader.loadAsync(url);
-    console.log("✅ Rig loaded from", url);
-    rig.scale.setScalar(useFallback ? 0.02 : 0.02);
-    rig.position.set(0, -1, 0);
-    scene.add(rig);
-    rigRoot = rig;
-    applyDebugMaterial(rigRoot);
-    addSkeletonHelper(rigRoot);
-    mixer = new THREE.AnimationMixer(rigRoot);
-  } catch (err) {
-    console.error("❌ Failed to load rig:", err);
-    if (!useFallback) {
-      const statusEl = document.getElementById("status");
-      if (statusEl) statusEl.textContent = "Rig failed, loading fallback…";
-      return loadRig(true);
-    }
-    throw err;
-  }
+async function play(name){
+  if(!mixer)return;
+  const clip=await loadClip(name);
+  if(!clip)return;
+  const action=mixer.clipAction(clip);
+  action.reset();
+  action.setLoop(THREE.LoopRepeat,Infinity);
+  if(currentAction)currentAction.crossFadeTo(action,0.4,false);
+  action.play();
+  currentAction=action;
 }
 
-async function loadAnim(name) {
-  const loader = new FBXLoader();
-  loader.setCrossOrigin("anonymous");
-  const url = FBX_BASE + encodeURIComponent(name) + ".fbx";
-  const fbx = await loader.loadAsync(url);
-  console.log("🎬 Animation loaded:", url);
-  return fbx.animations[0];
+// ---------- CAMERA + LOOP ----------
+function updateCamera(){
+  const r=cam.radius,y=cam.pitch,xz=r*Math.cos(y);
+  camera.position.set(cam.target.x+xz*Math.sin(cam.yaw),
+                      cam.target.y+r*Math.sin(y),
+                      cam.target.z+xz*Math.cos(cam.yaw));
+  camera.lookAt(cam.target);
 }
-
-async function play(name) {
-  try {
-    const clip = await loadAnim(name);
-    const action = mixer.clipAction(clip);
-    action.reset();
-    action.setLoop(THREE.LoopRepeat, Infinity);
-    action.play();
-  } catch (err) {
-    console.warn("⚠️ Could not load animation:", name, err);
-  }
-}
-
-function animate() {
+function animate(){
   requestAnimationFrame(animate);
-  if (mixer) {
-    mixer.update(clock.getDelta());
-  }
-  renderer.render(scene, camera);
+  const dt=clock.getDelta();
+  mixer?.update(dt);
+  updateCamera();
+  renderer.render(scene,camera);
 }
 
-(async () => {
-  const statusEl = document.getElementById("status");
-  if (statusEl) statusEl.textContent = "Loading Bob…";
-  try {
-    await waitForThree();
-    console.log("✅ THREE + FBXLoader ready.");
-    initThree();
-    await loadRig();
-    if (START_ANIM) {
-      await play(START_ANIM);
-    }
-    if (statusEl) statusEl.textContent = "👂 Listening…";
-    animate();
-  } catch (err) {
-    console.error("❌ Boot error:", err);
-    if (statusEl) statusEl.textContent = "❌ Load error.";
+// ---------- AUDIO CLICK UNLOCK ----------
+document.body.addEventListener("click",()=>{
+  if(state==="boot"){ state="idle"; setStatus("👂 Listening..."); }
+},{once:true});
+
+// ---------- BOOT ----------
+async function boot(){
+  setStatus("Initializing Bob...");
+  initThree();
+
+  try{
+    await loadModel();
+    await play("Neutral Idle");
+  } catch(err){
+    console.error(err);
+    setStatus("⚠️ Failed to load FBX or animation.");
+    return;
   }
-})();
+
+  animate();
+  state="idle";
+  setStatus("👂 Listening...");
+}
+
+boot().catch(e=>{console.error(e);setStatus("❌ Load error.");});
