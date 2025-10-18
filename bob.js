@@ -54,39 +54,38 @@ function initThree(){
 }
 
 // ---------- MODEL LOAD ----------
-async function loadModel(){
-  const loader=new FBXLoader();
-  const fbx=await loader.loadAsync(FBX_BASE+"Neutral Idle.fbx");
-  fbx.scale.setScalar(1);
-  fbx.position.set(0,0,0);
-  scene.add(fbx);
-  model=fbx;
-
-  // Load texture and force color-only interpretation
-  const tex=await new THREE.TextureLoader().loadAsync(TEX_URL);
-  tex.flipY=false;
-  tex.colorSpace = THREE.SRGBColorSpace;
-
-  fbx.traverse(o=>{
-    if(o.isMesh){
-      o.material = new THREE.MeshLambertMaterial({
-        map: tex,
-        color: 0xffffff,
-      });
-      o.material.needsUpdate=true;
-    }
+async function loadModel() {
+  const mtlLoader = new THREE.MTLLoader();
+  const materials = await new Promise((resolve, reject) => {
+    mtlLoader.load(
+      FBX_BASE + "Boney_Bob_the_skeleto_1017235951_texture.mtl",
+      (mtl) => {
+        mtl.preload();
+        resolve(mtl);
+      },
+      undefined,
+      reject
+    );
   });
 
-  mixer=new THREE.AnimationMixer(model);
+  const fbxLoader = new FBXLoader();
+  fbxLoader.setMaterials(materials);
+  const fbx = await fbxLoader.loadAsync(FBX_BASE + "Neutral Idle.fbx");
 
-  // Auto-fit camera
-  const box=new THREE.Box3().setFromObject(model);
-  const size=box.getSize(new THREE.Vector3()).length();
-  const center=box.getCenter(new THREE.Vector3());
-  camera.position.copy(center.clone().add(new THREE.Vector3(size/2,size/3,size/2)));
+  fbx.scale.setScalar(1);
+  fbx.position.set(0, 0, 0);
+  scene.add(fbx);
+  model = fbx;
+
+  mixer = new THREE.AnimationMixer(model);
+
+  const box = new THREE.Box3().setFromObject(model);
+  const size = box.getSize(new THREE.Vector3()).length();
+  const center = box.getCenter(new THREE.Vector3());
+  camera.position.copy(center.clone().add(new THREE.Vector3(size / 2, size / 3, size / 2)));
   camera.lookAt(center);
 
-  return model.animations?.[0]??null;
+  return model.animations?.[0] ?? null;
 }
 
 // ---------- ANIMATION ----------
