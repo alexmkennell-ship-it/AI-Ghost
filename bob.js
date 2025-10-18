@@ -388,8 +388,7 @@ function animate(){
     initThree();
     await loadRig();
     await play("Neutral Idle");
-    scheduleIdleCycle();
-   …and finally:  
+    scheduleIdleCycle(); 
 
 ```js
     if(window.speechSynthesis){
