@@ -383,14 +383,16 @@ function animate(){
 // ================= BOOT =================
 (async()=>{
   try{
-    if(typeof window.FBXLoader==="undefined"&&window.THREE&&THREE.FBXLoader){window.FBXLoader=THREE.FBXLoader;}
-    if(typeof THREE==="undefined"||typeof FBXLoader==="undefined")throw new Error("THREE/FBXLoader missing");
+    if(typeof window.FBXLoader==="undefined"&&window.THREE&&THREE.FBXLoader){
+      window.FBXLoader=THREE.FBXLoader;
+    }
+    if(typeof THREE==="undefined"||typeof FBXLoader==="undefined")
+      throw new Error("THREE/FBXLoader missing");
     initThree();
     await loadRig();
     await play("Neutral Idle");
     scheduleIdleCycle(); 
 
-```js
     if(window.speechSynthesis){
       window.speechSynthesis.onvoiceschanged = ()=>{};
     }
@@ -400,4 +402,5 @@ function animate(){
     console.error(e);
     showWarnBadge();
   }
-})
+})();
+
