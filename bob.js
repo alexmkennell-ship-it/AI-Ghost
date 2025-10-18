@@ -1,5 +1,5 @@
-// 🟢 Bob v8.7 — Full GitHub-Ready Cowboy
-
+// 🟢 Bob v8.7 — GitHub-Ready Cowboy
+import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.155.0/build/three.module.js";
 import { FBXLoader } from "https://cdn.jsdelivr.net/npm/three@0.155.0/examples/jsm/loaders/FBXLoader.js";
 import { OrbitControls } from "https://cdn.jsdelivr.net/npm/three@0.155.0/examples/jsm/controls/OrbitControls.js";
 
@@ -177,7 +177,7 @@ function animate() {
   renderer.render(scene, camera);
 }
 
-// ---------- MAIN BOOT SEQUENCE ----------
+// ---------- MAIN BOOT ----------
 async function initBob() {
   console.log("🟢 Bob v8.7 init");
   try {
@@ -198,7 +198,7 @@ async function initBob() {
   }
 }
 
-// ---------- 3-SECOND GITHUB DELAY ----------
+// ---------- GITHUB DELAY ----------
 setTimeout(() => {
   console.log("🐎 GitHub delay complete — booting Bob...");
   initBob();
