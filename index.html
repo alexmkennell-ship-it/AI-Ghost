@@ -5,38 +5,35 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Bob the Bone Cowboy</title>
 
-  <!-- ✅ Global scripts — no modules, no imports -->
-  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/js/loaders/FBXLoader.js"></script>
+  <!-- ✅ Load Three.js (non-module legacy global) -->
+  <script src="https://cdn.jsdelivr.net/gh/mrdoob/three.js@r146/build/three.min.js"></script>
+
+  <!-- ✅ Load FBXLoader that attaches globally -->
+  <script src="https://cdn.jsdelivr.net/gh/mrdoob/three.js@r146/examples/js/loaders/FBXLoader.js"></script>
 
   <style>
-    html, body {
+    body {
       margin: 0;
-      height: 100%;
       background: radial-gradient(circle at center, #0b0b0b 50%, #000 100%);
       overflow: hidden;
+      text-align: center;
       color: #b8ffb8;
       font-family: monospace;
     }
-
     #status {
-      position: fixed;
-      bottom: 10px;
-      width: 100%;
-      text-align: center;
+      position: absolute;
+      bottom: 1rem;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 1.1rem;
       opacity: 0.9;
-      font-size: 1rem;
-    }
-
-    canvas {
-      display: block;
     }
   </style>
 </head>
 <body>
-  <div id="status">Loading Bob…</div>
+  <div id="status">Loading Bob...</div>
 
-  <!-- ✅ Use this script after THREE + FBXLoader -->
-  <script src="./bob.js?v=5.0"></script>
+  <!-- ✅ Load Bob -->
+  <script src="./bob.js?v=5.2"></script>
 </body>
 </html>
