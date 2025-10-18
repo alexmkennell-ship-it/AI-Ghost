@@ -70,7 +70,7 @@ function initThree() {
 // MODEL LOADING
 /////////////////////////////////////////////////////
 async function loadModel() {
-  const loader = new FBXLoaderCtor();
+  const loader = new FBXLoader();
   const fbx = await loader.loadAsync(FBX_BASE + FILES["Neutral Idle"]);
   fbx.scale.setScalar(0.01);
   scene.add(fbx);
@@ -416,7 +416,7 @@ async function loadClip(name) {
     return fallbackClips[name] ?? fallbackClips["Neutral Idle"] ?? null;
   }
   if (cache[name]) return cache[name];
-  const loader = new FBXLoaderCtor();
+  const loader = new FBXLoader();
   const fbx = await loader.loadAsync(FBX_BASE + FILES[name]);
   const clip = fbx.animations[0];
   cache[name] = clip;
