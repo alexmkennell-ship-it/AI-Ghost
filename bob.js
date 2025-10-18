@@ -3,8 +3,8 @@ console.log("🟢 Bob v7.3 init");
 
 // ======== CONFIG ========
 const FBX_BASE = "https://pub-30bcc0b2a7044074a19efdef19f69857.r2.dev/models/";
-const RIG_FILE = "T-Pose.fbx"; // rig only; NOT played
-const GHOST_OPACITY = 0.30; // < 50% per projector brightness
+const RIG_FILE = "Neutral Idle.fbx"; // rig only; NOT played
+const GHOST_OPACITY = 0.1; // < 50% per projector brightness
 const CAMERA_ANCHOR = new THREE.Vector3(0, 1.6, 4);
 const DRIFT_RADIUS = 0.15;     // wander amplitude
 const RECENTER_EASE = 0.05;    // how quickly we ease to anchor per frame
