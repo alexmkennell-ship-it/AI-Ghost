@@ -1,22 +1,24 @@
 /*
- * Bob.js (debug build with URL encoding)
+ * Bob.js (idle rig version)
  *
- * This script loads a 3D cowboy rig and its animations from your
- * Cloudflare R2 bucket, applies a fallback if the rig fails, and
- * forces all meshes to render as bright yellow wireframes so you can
- * verify the geometry. It uses encodeURIComponent on file names to
- * handle spaces and other special characters. A fixed camera
- * position is used to simplify framing and debugging.
+ * This script loads a 3D rig and animation from your Cloudflare R2 bucket.
+ * To avoid issues with a missing or empty T‑pose file, the base rig is now
+ * set to the same FBX file used for the “Neutral Idle” animation. File names
+ * are URL‑encoded with encodeURIComponent to handle spaces. A visible
+ * wireframe material and skeleton helper are applied for debugging so you
+ * can verify that geometry is present. If the rig fails to load, the
+ * script falls back to the Samba dancer from the Three.js examples.
  */
 
-console.log("🟢 Booting Bob (debug build)…");
+console.log("🟢 Booting Bob (idle rig)…");
 
 // Base URL pointing at your public R2 bucket. Ensure CORS is enabled.
 const WORKER_URL = "https://pub-30bcc0b2a7044074a19efdef19f69857.r2.dev";
 const FBX_BASE   = `${WORKER_URL}/models/`;
 
-// Filenames (case‑sensitive!). Use encodeURIComponent when building URLs.
-const BASE_RIG   = "T-Pose.fbx";
+// Use the idle FBX as the base rig. Names are case‑sensitive.
+const BASE_RIG   = "Neutral Idle.fbx";
+// Play the idle animation on load; omit or set to null to skip.
 const START_ANIM = "Neutral Idle";
 
 // Fallback rig from the Three.js examples (always public)
@@ -25,10 +27,6 @@ const FALLBACK_RIG_URL = "https://threejs.org/examples/models/fbx/Samba%20Dancin
 let scene, camera, renderer, mixer, rigRoot;
 const clock = new THREE.Clock();
 
-/**
- * Wait until THREE and FBXLoader are available on the global object.
- * Resolves when ready or rejects after ~15 seconds.
- */
 function waitForThree() {
   return new Promise((resolve, reject) => {
     let tries = 0;
@@ -48,9 +46,6 @@ function waitForThree() {
   });
 }
 
-/**
- * Initialise Three.js renderer, camera and scene with basic lighting and ground.
- */
 function initThree() {
   renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
   renderer.outputEncoding = THREE.sRGBEncoding;
@@ -79,10 +74,6 @@ function initThree() {
   scene.add(ground);
 }
 
-/**
- * Traverse a rig and apply a visible material to all meshes.
- * Using bright yellow wireframe to verify geometry.
- */
 function applyDebugMaterial(rig) {
   rig.traverse(obj => {
     if (obj.isMesh) {
@@ -95,9 +86,6 @@ function applyDebugMaterial(rig) {
   });
 }
 
-/**
- * Add a skeleton helper to visualise bones for debugging.
- */
 function addSkeletonHelper(rig) {
   const helper = new THREE.SkeletonHelper(rig);
   helper.material.linewidth = 2;
@@ -105,20 +93,13 @@ function addSkeletonHelper(rig) {
   scene.add(helper);
 }
 
-/**
- * Load the rig, scale and position it, and add debug helpers.
- * If `useFallback` is true, loads the Samba model instead.
- */
 async function loadRig(useFallback = false) {
   const loader = new FBXLoader();
   loader.setCrossOrigin("anonymous");
-  const url = useFallback
-    ? FALLBACK_RIG_URL
-    : FBX_BASE + encodeURIComponent(BASE_RIG);
+  const url = useFallback ? FALLBACK_RIG_URL : FBX_BASE + encodeURIComponent(BASE_RIG);
   try {
     const rig = await loader.loadAsync(url);
     console.log("✅ Rig loaded from", url);
-    // Use small scale to fit typical models; adjust if needed.
     rig.scale.setScalar(useFallback ? 0.02 : 0.02);
     rig.position.set(0, -1, 0);
     scene.add(rig);
@@ -137,10 +118,6 @@ async function loadRig(useFallback = false) {
   }
 }
 
-/**
- * Load an animation file from the base URL. Uses encodeURIComponent
- * on the animation name to handle spaces and special characters.
- */
 async function loadAnim(name) {
   const loader = new FBXLoader();
   loader.setCrossOrigin("anonymous");
@@ -150,9 +127,6 @@ async function loadAnim(name) {
   return fbx.animations[0];
 }
 
-/**
- * Play a named animation on the current rig. If loading fails, logs a warning.
- */
 async function play(name) {
   try {
     const clip = await loadAnim(name);
@@ -165,9 +139,6 @@ async function play(name) {
   }
 }
 
-/**
- * Animation loop. Updates the mixer and renders the scene.
- */
 function animate() {
   requestAnimationFrame(animate);
   if (mixer) {
@@ -176,7 +147,6 @@ function animate() {
   renderer.render(scene, camera);
 }
 
-// Boot sequence
 (async () => {
   const statusEl = document.getElementById("status");
   if (statusEl) statusEl.textContent = "Loading Bob…";
