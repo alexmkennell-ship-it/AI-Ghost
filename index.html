@@ -5,26 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Bob the Bone Cowboy</title>
 
-  <!-- ✅ Force old-style global THREE build -->
+  <!-- ✅ Global scripts — no modules, no imports -->
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
-
-  <!-- ✅ Patch FBXLoader to global scope -->
-  <script>
-    (async () => {
-      const src = "https://cdn.jsdelivr.net/npm/three@0.128.0/examples/jsm/loaders/FBXLoader.js";
-      const txt = await fetch(src).then(r => r.text());
-      // turn it into a global-attached loader
-      const patched = txt.replace(
-        /export\s+\{[^}]+\};?/g,
-        "window.FBXLoader = FBXLoader;"
-      );
-      const blob = new Blob([patched], { type: "application/javascript" });
-      const url = URL.createObjectURL(blob);
-      const s = document.createElement("script");
-      s.src = url;
-      document.head.appendChild(s);
-    })();
-  </script>
+  <script src="https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/js/loaders/FBXLoader.js"></script>
 
   <style>
     html, body {
@@ -35,6 +18,7 @@
       color: #b8ffb8;
       font-family: monospace;
     }
+
     #status {
       position: fixed;
       bottom: 10px;
@@ -43,26 +27,16 @@
       opacity: 0.9;
       font-size: 1rem;
     }
-    canvas { display: block; }
+
+    canvas {
+      display: block;
+    }
   </style>
 </head>
 <body>
   <div id="status">Loading Bob…</div>
 
-  <!-- ✅ Wait for both THREE and FBXLoader -->
-  <script>
-    function loadBob() {
-      console.log("THREE:", !!window.THREE, "FBXLoader:", !!window.FBXLoader);
-      if (window.THREE && window.FBXLoader) {
-        const s = document.createElement("script");
-        s.src = "./bob.js?v=" + Date.now();
-        document.body.appendChild(s);
-      } else {
-        console.warn("⏳ Waiting for FBXLoader attachment…");
-        setTimeout(loadBob, 500);
-      }
-    }
-    window.addEventListener("load", loadBob);
-  </script>
+  <!-- ✅ Use this script after THREE + FBXLoader -->
+  <script src="./bob.js?v=5.0"></script>
 </body>
 </html>
