@@ -1,6 +1,5 @@
-// bob.js — v4.0.3 “Stable FBX Personality Engine”
-// Fixes THREE.js loading, duplicate imports, and runtime import issues.
-// Safe for <script> inclusion without module specifiers.
+// bob.js — v4.1 “Global Stability Build”
+// One global THREE instance, no ESM imports. Fully compatible with <script> tags.
 
 /////////////////////////////////////////////////////
 // CONFIG
@@ -10,30 +9,34 @@ const FBX_BASE = "https://pub-30bcc0b2a7044074a19efdef19f69857.r2.dev/bob-animat
 const TEX_URL = `${FBX_BASE}Boney_Bob_the_skeleto_1017235951_texture.png`;
 
 /////////////////////////////////////////////////////
-// LOAD THREE.JS AND FBXLOADER SAFELY
+// LOAD THREE.JS + FBXLoader (global-safe)
 /////////////////////////////////////////////////////
-async function loadThreeJS() {
-  if (window.THREE) return;
-  await new Promise((resolve, reject) => {
-    const script = document.createElement("script");
-    script.src = "https://unpkg.com/three@0.160.0/build/three.min.js";
-    script.onload = resolve;
-    script.onerror = reject;
-    document.head.appendChild(script);
-  });
-  console.log("✅ THREE.js loaded (global)");
-}
+async function ensureThreeReady() {
+  if (window.THREE && THREE.FBXLoader) return;
 
-async function loadFBXLoader() {
-  if (THREE.FBXLoader) return;
-  await new Promise((resolve, reject) => {
-    const script = document.createElement("script");
-    script.src = "https://unpkg.com/three@0.160.0/examples/js/loaders/FBXLoader.js";
-    script.onload = resolve;
-    script.onerror = reject;
-    document.head.appendChild(script);
-  });
-  console.log("✅ FBXLoader loaded (global)");
+  // 1️⃣ Load THREE (global)
+  if (!window.THREE) {
+    await new Promise((resolve, reject) => {
+      const s = document.createElement("script");
+      s.src = "https://unpkg.com/three@0.160.0/build/three.min.js";
+      s.onload = resolve;
+      s.onerror = reject;
+      document.head.appendChild(s);
+    });
+    console.log("✅ THREE.js loaded");
+  }
+
+  // 2️⃣ Load FBXLoader (attaches to global THREE)
+  if (!THREE.FBXLoader) {
+    await new Promise((resolve, reject) => {
+      const s = document.createElement("script");
+      s.src = "https://unpkg.com/three@0.160.0/examples/js/loaders/FBXLoader.js";
+      s.onload = resolve;
+      s.onerror = reject;
+      document.head.appendChild(s);
+    });
+    console.log("✅ FBXLoader loaded");
+  }
 }
 
 /////////////////////////////////////////////////////
@@ -76,7 +79,7 @@ const talkPool = [ANIM.TALK, ANIM.SHRUG, ANIM.LAUGH];
 const funPool = [ANIM.DANCE_SILLY];
 
 /////////////////////////////////////////////////////
-// UTILS
+// UTILITIES
 /////////////////////////////////////////////////////
 const setStatus = (m) => (document.getElementById("status") || {}).textContent = m || "";
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
@@ -84,19 +87,19 @@ const pick = (a) => a[Math.floor(Math.random() * a.length)];
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 
 /////////////////////////////////////////////////////
-// SCENE
+// SCENE SETUP
 /////////////////////////////////////////////////////
 let scene, camera, renderer, mixer, baseModel, currentAction;
-let clock = new THREE.Clock();
-let jawBone = null, fingerBones = [], focusBone = null;
-let cam = { radius: 5.8, yaw: 0, pitch: 1.3, drift: true, target: new THREE.Vector3(0, 1.2, 0) };
+let clock, jawBone = null, fingerBones = [], focusBone = null;
 let state = "boot", micLocked = false, sleepLock = false;
+let cam = { radius: 5.8, yaw: 0, pitch: 1.3, drift: true, target: new THREE.Vector3(0, 1.2, 0) };
 
 async function initScene() {
   renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
   renderer.setSize(window.innerWidth, window.innerHeight);
   document.body.appendChild(renderer.domElement);
   scene = new THREE.Scene();
+  clock = new THREE.Clock();
 
   camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
   camera.position.set(0, 1.6, cam.radius);
@@ -113,7 +116,7 @@ async function initScene() {
 }
 
 /////////////////////////////////////////////////////
-// LOAD MODEL + TEXTURE
+// MODEL LOADING
 /////////////////////////////////////////////////////
 async function loadModel() {
   const loader = new THREE.FBXLoader();
@@ -138,7 +141,7 @@ async function loadModel() {
 }
 
 /////////////////////////////////////////////////////
-// ANIMATION HANDLING
+// ANIMATION CONTROL
 /////////////////////////////////////////////////////
 let clipsCache = {}, fbxCache = {};
 
@@ -166,7 +169,7 @@ async function play(name, { fade = 0.4, loop = true } = {}) {
 }
 
 /////////////////////////////////////////////////////
-// RENDER + CAMERA
+// CAMERA + RENDER LOOP
 /////////////////////////////////////////////////////
 function updateCamera() {
   if (state === "idle" && cam.drift) cam.yaw += Math.sin(performance.now() * 0.00015) * 0.002;
@@ -193,7 +196,7 @@ function animate() {
 }
 
 /////////////////////////////////////////////////////
-// AUDIO + SPEECH
+// AUDIO / TTS
 /////////////////////////////////////////////////////
 function startAmplitude(audio) {
   try {
@@ -280,10 +283,13 @@ if(window.SpeechRecognition){
 /////////////////////////////////////////////////////
 async function boot(){
   setStatus("🟢 Booting Bob …");
-  await loadThreeJS(); await loadFBXLoader();
-  await initScene(); await loadModel();
+  await ensureThreeReady();
+  await initScene();
+  await loadModel();
   await play(ANIM.IDLE_NEUTRAL);
-  animate(); scheduleIdle(); state="idle"; setStatus("👂 Listening…");
+  animate();
+  scheduleIdle();
+  state="idle"; setStatus("👂 Listening…");
   console.log("🎉 Bob ready!");
 }
 window.addEventListener("DOMContentLoaded",boot);
