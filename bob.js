@@ -61,7 +61,7 @@ async function loadModel(){
 
   // 🎯 Load base rig (your mesh only)
   const fbx=await loader.loadAsync(FBX_BASE+"T-Pose.fbx");
-  fbx.scale.setScalar(0.01); // Mixamo FBXs are huge; scale down
+  fbx.scale.setScalar(1); // Mixamo FBXs are huge; scale down
   fbx.position.set(0,0,0);
   scene.add(fbx);
   model=fbx;
