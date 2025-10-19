@@ -68,22 +68,19 @@ async function loadRig() {
   model = fbx;
   mixer = new THREE.AnimationMixer(model);
 
-  // --- Center Bob ---
+  // --- Center Bob and frame full body ---
   const box = new THREE.Box3().setFromObject(model);
   const center = box.getCenter(new THREE.Vector3());
-  const size = box.getSize(new THREE.Vector3()).length();
+  const size = box.getSize(new THREE.Vector3());
+  const maxDim = Math.max(size.x, size.y, size.z);
 
-  // Move model so it's centered at world origin
+  // Move model so he's centered at origin
   model.position.sub(center);
 
-  // Position camera to see entire body
-  const dist = size * 2.0;      // pull camera back farther
-  const height = size * 0.5;    // aim a little above the ground
-  camera.position.set(0, height, dist);
-
-  // Aim camera at Bob’s mid-section so he’s fully framed
-  camera.lookAt(0, height * 0.7, 0);
-}
+  // --- Camera framing ---
+  // Back the camera way up, aim toward his midsection
+  const dist = maxDim * 3.5;    // increase this if still too close
+  const height = maxDim * 0.9;  // aim height a lit*
 
 async function loadClip(name){
   if(cache[name]) return cache[name];
