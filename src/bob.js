@@ -1,7 +1,7 @@
+import * as THREE from "three";
+import { FBXLoader } from "three/examples/jsm/loaders/FBXLoader.js";
+import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 
-import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.155.0/build/three.module.js";
-import { FBXLoader } from "https://cdn.jsdelivr.net/npm/three@0.155.0/examples/jsm/loaders/FBXLoader.js";
-import { OrbitControls } from "https://cdn.jsdelivr.net/npm/three@0.155.0/examples/jsm/controls/OrbitControls.js";
 
 const WORKER_URL = "https://ghostaiv1.alexmkennell.workers.dev";
 const FBX_BASE = "https://pub-30bcc0b2a7044074a19efdef19f69857.r2.dev/models/";
