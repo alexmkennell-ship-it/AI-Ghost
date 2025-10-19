@@ -1,4 +1,4 @@
-// Bob v8.9 — Bone-only + Skits + Sleep/Wake
+// Bob v8.9 — Bone-only + Skits + Sleep/Wake (Full build)
 import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.165.0/build/three.module.js";
 import { FBXLoader } from "https://cdn.jsdelivr.net/npm/three@0.165.0/examples/jsm/loaders/FBXLoader.js";
 import { OrbitControls } from "https://cdn.jsdelivr.net/npm/three@0.165.0/examples/jsm/controls/OrbitControls.js";
@@ -57,7 +57,6 @@ function applyBoneMaterial(root){
 }
 
 // ---------- MODEL / ANIMS ----------
-// ---------- MODEL / ANIMS ----------
 async function loadRig() {
   const loader = new FBXLoader();
   const fbx = await loader.loadAsync(FBX_BASE + "T-Pose.fbx");
@@ -78,9 +77,11 @@ async function loadRig() {
   model.position.sub(center);
 
   // --- Camera framing ---
-  // Back the camera way up, aim toward his midsection
-  const dist = maxDim * 3.5;    // increase this if still too close
-  const height = maxDim * 0.9;  // aim height a lit
+  const dist = maxDim * 3.8;   // farther back for full body
+  const height = maxDim * 0.9;
+  camera.position.set(0, height, dist);
+  camera.lookAt(0, height * 0.4, 0);
+}
 
 async function loadClip(name){
   if(cache[name]) return cache[name];
