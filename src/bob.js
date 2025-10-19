@@ -80,7 +80,7 @@ async function loadRig() {
   // --- Camera framing ---
   // Back the camera way up, aim toward his midsection
   const dist = maxDim * 3.5;    // increase this if still too close
-  const height = maxDim * 0.9;  // aim height a lit*
+  const height = maxDim * 0.9;  // aim height a lit
 
 async function loadClip(name){
   if(cache[name]) return cache[name];
