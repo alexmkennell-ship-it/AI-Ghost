@@ -148,4 +148,68 @@ function initSpeech(){
 async function goSleep(){
   if(asleep) return;
   asleep = true;
-  await play("Sl
+  await play("Sleeping Idle");
+  await say("Catchin' me a bone nap...");
+}
+async function wakeBob(){
+  if(!asleep) return;
+  asleep = false;
+  await play("Waking", THREE.LoopOnce);
+  setTimeout(()=>play(DEFAULT_IDLE),1200);
+  await say("Mornin', partner!");
+}
+
+// ---------- RANDOM SKITS ----------
+function startRandomSkits(){
+  const skits = [
+    { anim:"Silly Dancing", lines:["Watch these bones boogie!","Dust off them boots!"] },
+    { anim:"Waving", lines:["Howdy there!","Over here!"] },
+    { anim:"Laughing", lines:["Heh-heh!","Ha! That tickles my funny bone!"] },
+    { anim:"Looking Around", lines:["Where’d everybody go?","Feels mighty quiet ‘round here."] },
+  ];
+
+  setInterval(async()=>{
+    if(!mixer || asleep || isSpeaking) return;
+    const since = Date.now() - lastInteraction;
+    if(since > 20000){  // only if idle
+      const pick = skits[Math.floor(Math.random()*skits.length)];
+      await play(pick.anim, THREE.LoopOnce);
+      await say(pick.lines[Math.floor(Math.random()*pick.lines.length)]);
+      setTimeout(()=>{ if(!asleep) play(DEFAULT_IDLE); }, 5000);
+    }
+  }, 45000 + Math.random()*45000);
+}
+
+// ---------- AUTO-SLEEP TIMER ----------
+function startSleepTimer(){
+  setInterval(()=>{
+    if(asleep || isSpeaking) return;
+    const idleTime = Date.now() - lastInteraction;
+    if(idleTime > 120000){ // 2 minutes
+      goSleep();
+    }
+  }, 10000);
+}
+
+// ---------- LOOP ----------
+function animate(){
+  requestAnimationFrame(animate);
+  const dt = clock.getDelta();
+  mixer?.update(dt);
+  renderer.render(scene,camera);
+}
+
+// ---------- BOOT ----------
+async function initBob(){
+  try{
+    initThree();
+    await loadRig();
+    await play(DEFAULT_IDLE);
+    document.body.addEventListener("click",()=>{ if(!recognition) initSpeech(); });
+    startRandomSkits();
+    startSleepTimer();
+    animate();
+  }catch(e){ console.error("❌ Boot:",e); }
+}
+
+setTimeout(initBob,1500);
