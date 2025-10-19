@@ -62,26 +62,27 @@ async function loadRig() {
   const loader = new FBXLoader();
   const fbx = await loader.loadAsync(FBX_BASE + "T-Pose.fbx");
   fbx.scale.setScalar(1);
-
   applyBoneMaterial(fbx);
   scene.add(fbx);
 
   model = fbx;
   mixer = new THREE.AnimationMixer(model);
 
-  // --- Center Bob on screen ---
+  // --- Center Bob ---
   const box = new THREE.Box3().setFromObject(model);
   const center = box.getCenter(new THREE.Vector3());
   const size = box.getSize(new THREE.Vector3()).length();
 
-  // Move Bob so his center sits at the world origin (0,0,0)
+  // Move model so it's centered at world origin
   model.position.sub(center);
 
-  // Re-aim the camera at the new centered position
-  camera.lookAt(0, 1, 0);
+  // Position camera to see entire body
+  const dist = size * 2.0;      // pull camera back farther
+  const height = size * 0.5;    // aim a little above the ground
+  camera.position.set(0, height, dist);
 
-  // Adjust camera distance so full body fits in view
-  camera.position.set(0, 1.6, size * 0.55);
+  // Aim camera at Bob’s mid-section so he’s fully framed
+  camera.lookAt(0, height * 0.7, 0);
 }
 
 async function loadClip(name){
