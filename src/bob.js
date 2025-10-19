@@ -1,20 +1,20 @@
-// Bob v10 — Expressive Cowboy (Amplitude + Emotion + Gestures + Hey Bob Dance)
+// Bob v10.1 — Smooth Cowboy (Mic + Transitions Polished)
 import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.165.0/build/three.module.js";
 import { FBXLoader } from "https://cdn.jsdelivr.net/npm/three@0.165.0/examples/jsm/loaders/FBXLoader.js";
 import { OrbitControls } from "https://cdn.jsdelivr.net/npm/three@0.165.0/examples/jsm/controls/OrbitControls.js";
 
-console.log("🤠 Bob v10 — Expressive Cowboy online");
+console.log("🤠 Bob v10.1 — Smooth & Listening");
 
 const WORKER_URL = "https://ghostaiv1.alexmkennell.workers.dev";
 const FBX_BASE   = "https://pub-30bcc0b2a7044074a19efdef19f69857.r2.dev/models/";
 
+const DEFAULT_IDLE = "Neutral Idle";
 const IDLE_POOL  = ["Neutral Idle","Breathing Idle","Idle","Bored","Looking Around","Sad Idle"];
 const SKIT_POOL  = [
   { anim:"Silly Dancing", lines:["Watch these bones boogie!","Dust off them boots!"] },
   { anim:"Waving", lines:["Howdy there!","Over here!"] },
   { anim:"Laughing", lines:["Heh-heh!","Ha! That tickles my funny bone!"] },
 ];
-const DEFAULT_IDLE = "Neutral Idle";
 
 let scene,camera,renderer,clock,mixer,model,currentAction;
 let recognition=null,isSpeaking=false,asleep=false;
@@ -30,7 +30,7 @@ function initThree(){
 
   scene=new THREE.Scene();
   camera=new THREE.PerspectiveCamera(45,window.innerWidth/window.innerHeight,0.1,100);
-  camera.position.set(0,1.6,8); // farther back for full body
+  camera.position.set(0,1.6,8);
 
   const hemi=new THREE.HemisphereLight(0xffffff,0x3a3a3a,0.8);
   const key =new THREE.DirectionalLight(0xffffff,0.9); key.position.set(2,4,3);
@@ -86,15 +86,34 @@ async function loadClip(name){
   const fbx=await loader.loadAsync(FBX_BASE+encodeURIComponent(name)+".fbx");
   return (cache[name]=fbx.animations[0]);
 }
-async function play(name,loop=THREE.LoopRepeat,fade=0.25){
+async function play(name,loop=THREE.LoopRepeat,fade=0.8){
   if(!mixer) return;
   const clip=await loadClip(name);
   if(!clip) return;
   const act=mixer.clipAction(clip);
-  act.reset(); act.setLoop(loop,Infinity);
-  if(currentAction && currentAction!==act) currentAction.crossFadeTo(act,fade,false);
-  act.play(); currentAction=act;
-  console.log("🎬 Bob:",name);
+  act.reset();
+  act.setLoop(loop,Infinity);
+  act.clampWhenFinished=true;
+  if(currentAction && currentAction!==act){
+    currentAction.crossFadeTo(act,fade,false);
+  }
+  act.play();
+  currentAction=act;
+  console.log("🎬 Bob action:",name);
+}
+
+// ---------- CHAT ----------
+async function askBob(prompt){
+  try{
+    const r=await fetch(WORKER_URL,{
+      method:"POST",
+      headers:{ "Content-Type":"application/json" },
+      body:JSON.stringify({prompt})
+    });
+    const j=await r.json();
+    const reply=j.reply || "Well shoot, reckon I'm tongue-tied.";
+    await say(reply);
+  }catch(e){ console.warn("⚠️ Chat error:",e); }
 }
 
 // ---------- SPEECH ----------
@@ -104,24 +123,22 @@ async function say(text){
   try{
     recognition?.stop();
 
-    // emotion detection
-    let emotionAnim="Talking";
-    if(/haha|lol|😂/.test(text)) emotionAnim="Laughing";
-    else if(/[!?]$/.test(text)) emotionAnim="Yelling Out";
-    else if(/\?$/.test(text)) emotionAnim="Shaking Head No";
+    let emotion="Talking";
+    if(/haha|lol|😂/.test(text)) emotion="Laughing";
+    else if(/[!?]$/.test(text)) emotion="Yelling Out";
+    else if(/\?$/.test(text)) emotion="Shaking Head No";
 
-    await play(emotionAnim,THREE.LoopRepeat,0.25);
+    await play(emotion,THREE.LoopRepeat,0.5);
 
     const resp=await fetch(`${WORKER_URL}/tts`,{
       method:"POST",
       headers:{ "Content-Type":"application/json" },
-      body:JSON.stringify({text,voice:"onyx"})
+      body:JSON.stringify({ text, voice:"onyx" })
     });
     const blob=await resp.blob();
     const url=URL.createObjectURL(blob);
     const audio=new Audio(url);
 
-    // audio analyzer for head motion
     const ctx=new (window.AudioContext||window.webkitAudioContext)();
     const src=ctx.createMediaElementSource(audio);
     const analyser=ctx.createAnalyser();
@@ -138,56 +155,28 @@ async function say(text){
       avg/=data.length;
       const amp=avg/128;
       if(model){
-        jawPhase+=0.12;
-        model.rotation.x=Math.sin(jawPhase)*0.02*amp;
-        model.rotation.y=Math.sin(jawPhase*0.3)*0.04*amp;
+        jawPhase+=0.1;
+        model.rotation.x += (Math.sin(jawPhase)*0.03*amp - model.rotation.x)*0.25;
+        model.rotation.y += (Math.sin(jawPhase*0.4)*0.05*amp - model.rotation.y)*0.25;
       }
       if(isSpeaking) requestAnimationFrame(animateFromAudio);
     }
     requestAnimationFrame(animateFromAudio);
 
-    // random gesture triggers
-    const gestureAnims=["Waving","Shrugging","Shaking Head No"];
-    const gestureTimer=setInterval(()=>{
-      if(Math.random()<0.5 && !asleep && isSpeaking){
-        const pick=gestureAnims[Math.floor(Math.random()*gestureAnims.length)];
-        play(pick,THREE.LoopOnce,0.2);
-        setTimeout(()=>{ if(isSpeaking && !asleep) play("Talking",THREE.LoopRepeat,0.2); },1500);
-      }
-    },3000);
-
     audio.onended=()=>{
-      clearInterval(gestureTimer);
       isSpeaking=false;
       model.rotation.set(0,0,0);
       ctx.close();
-      if(!asleep) play(DEFAULT_IDLE);
+      if(!asleep) play(DEFAULT_IDLE,THREE.LoopRepeat,1.2);
       try{recognition?.start();}catch{}
     };
     await audio.play();
   }catch(e){
-    console.warn("⚠️ TTS:",e);
+    console.warn("⚠️ TTS failed:",e);
     isSpeaking=false;
     if(!asleep) play(DEFAULT_IDLE);
   }
 }
-
-// ---------- CHAT ----------
-async function askBob(prompt){
-  try {
-    const r = await fetch(WORKER_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ prompt })
-    });
-    const j = await r.json();
-    const reply = j.reply || "Well shoot, reckon I'm tongue-tied.";
-    await say(reply);
-  } catch(e) {
-    console.warn("⚠️ Chat error:", e);
-  }
-}
-
 
 // ---------- MIC ----------
 function initSpeech(){
@@ -199,51 +188,66 @@ function initSpeech(){
 
   recognition.onresult=e=>{
     const text=e.results[e.results.length-1][0].transcript.trim().toLowerCase();
+    console.log("🗣️ Heard:",text);
     lastInteraction=Date.now();
+
     if(asleep){
       if(/hey\s*bob/.test(text)) heyBobDance();
       return;
     }
+
     if(!isSpeaking){
       if(/sleep|nap/.test(text)) goSleep();
       else if(/hey\s*bob/.test(text)) heyBobDance();
       else askBob(text);
     }
   };
-  recognition.onend=()=>{ if(!isSpeaking && !asleep) try{recognition.start();}catch{} };
-  recognition.start();
-  console.log("🟢 Bob listening...");
+
+  recognition.onerror=e=>{
+    console.warn("🎙️ Mic error:",e.error);
+    if(e.error==="not-allowed") alert("Enable microphone permissions and reload the page.");
+  };
+
+  recognition.onend=()=>{
+    if(!isSpeaking && !asleep){
+      console.log("🎙️ Restarting mic...");
+      try{recognition.start();}catch{}
+    }
+  };
+
+  console.log("🎙️ Mic ready — waiting for permission...");
+  try{recognition.start();}catch(e){console.warn("Mic start error:",e);}
 }
 
 // ---------- BEHAVIORS ----------
 async function goSleep(){
   if(asleep) return;
   asleep=true;
-  await play("Sleeping Idle");
+  await play("Sleeping Idle",THREE.LoopRepeat,1.5);
   await say("Catchin' me a bone nap...");
 }
 async function wakeBob(){
   if(!asleep) return;
   asleep=false;
-  await play("Waking",THREE.LoopOnce);
-  setTimeout(()=>play(DEFAULT_IDLE),1200);
+  await play("Waking",THREE.LoopOnce,1.0);
+  setTimeout(()=>play(DEFAULT_IDLE,THREE.LoopRepeat,1.5),1500);
   await say("Mornin', partner!");
 }
 async function heyBobDance(){
   asleep=false;
-  await play("Silly Dancing",THREE.LoopRepeat);
+  await play("Silly Dancing",THREE.LoopRepeat,0.5);
   await say("Yee-haw! You called me, partner — time to dance!");
-  setTimeout(()=>play(DEFAULT_IDLE),7000);
+  setTimeout(()=>play(DEFAULT_IDLE,THREE.LoopRepeat,1.0),7000);
 }
 
-// ---------- IDLE SHIFTS + SKITS ----------
+// ---------- IDLE / SKITS / SLEEP ----------
 function startIdleShifts(){
   setInterval(async()=>{
     if(!mixer || asleep || isSpeaking) return;
     const since=Date.now()-lastInteraction;
     if(since>10000){
       const next=IDLE_POOL[Math.floor(Math.random()*IDLE_POOL.length)];
-      await play(next);
+      await play(next,THREE.LoopRepeat,1.2);
     }
   },20000);
 }
@@ -253,9 +257,9 @@ function startRandomSkits(){
     const since=Date.now()-lastInteraction;
     if(since>20000){
       const pick=SKIT_POOL[Math.floor(Math.random()*SKIT_POOL.length)];
-      await play(pick.anim,THREE.LoopOnce);
+      await play(pick.anim,THREE.LoopOnce,1.0);
       await say(pick.lines[Math.floor(Math.random()*pick.lines.length)]);
-      setTimeout(()=>{ if(!asleep) play(DEFAULT_IDLE); },5000);
+      setTimeout(()=>{ if(!asleep) play(DEFAULT_IDLE,THREE.LoopRepeat,1.0); },5000);
     }
   },60000 + Math.random()*60000);
 }
@@ -281,12 +285,18 @@ async function initBob(){
     initThree();
     await loadRig();
     await play(DEFAULT_IDLE);
-    document.body.addEventListener("click",()=>{ if(!recognition) initSpeech(); });
+    // user gesture required for mic start
+    document.body.addEventListener("click",()=>{
+      if(!recognition){
+        initSpeech();
+        alert("🎙️ Mic activated — say 'Hey Bob' to test!");
+      }
+    },{once:true});
     startIdleShifts();
     startRandomSkits();
     startSleepTimer();
     animate();
-  }catch(e){ console.error("❌ Boot:",e); }
+  }catch(e){ console.error("❌ Boot failed:",e); }
 }
 
-setTimeout(initBob,1500);
+setTimeout(initBob,1000);
