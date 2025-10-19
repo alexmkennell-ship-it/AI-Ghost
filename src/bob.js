@@ -1,22 +1,28 @@
-// Bob v10.3 — Storyteller Edition (smooth blends, voice pitch/speed, gestures, listening cue)
+// Bob v10.4 — Storyteller (Preloaded, Smooth, Quiet)
 import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.165.0/build/three.module.js";
 import { FBXLoader } from "https://cdn.jsdelivr.net/npm/three@0.165.0/examples/jsm/loaders/FBXLoader.js";
 import { OrbitControls } from "https://cdn.jsdelivr.net/npm/three@0.165.0/examples/jsm/controls/OrbitControls.js";
 
-console.log("📖 Bob v10.3 — Storyteller online");
+console.log("📖 Bob v10.4 — Storyteller online");
 
 const WORKER_URL = "https://ghostaiv1.alexmkennell.workers.dev";
 const FBX_BASE   = "https://pub-30bcc0b2a7044074a19efdef19f69857.r2.dev/models/";
 const DEFAULT_IDLE = "Neutral Idle";
 
-// voice tuning for cowboy drawl
 const VOICE = { name: "onyx", speed: 0.9, pitch: -1.0 };
+
+// preload list (prevents freezing)
+const PRELOAD_ANIMS = [
+  "Neutral Idle","Breathing Idle","Idle","Bored","Looking Around","Sad Idle",
+  "Silly Dancing","Waving","Laughing","Shaking Head No","Shrugging",
+  "Sleeping Idle","Waking","Yelling Out","Talking"
+];
 
 const IDLE_POOL = ["Neutral Idle","Breathing Idle","Idle","Bored","Looking Around","Sad Idle"];
 const SKIT_POOL = [
   { anim:"Silly Dancing", lines:["Watch these bones boogie!","Dust off them boots!"] },
-  { anim:"Waving",        lines:["Howdy there!","Over here!"] },
-  { anim:"Laughing",      lines:["Heh-heh!","Ha! That tickles my funny bone!"] },
+  { anim:"Waving", lines:["Howdy there!","Over here!"] },
+  { anim:"Laughing", lines:["Heh-heh!","Ha! That tickles my funny bone!"] }
 ];
 
 let scene,camera,renderer,clock,mixer,model,currentAction;
@@ -33,15 +39,14 @@ function initThree(){
 
   scene=new THREE.Scene();
   camera=new THREE.PerspectiveCamera(45,window.innerWidth/window.innerHeight,0.1,100);
-  camera.position.set(0,1.6,5.5);           // a touch closer than v10.2
+  camera.position.set(0,1.6,5.5);
 
   const hemi=new THREE.HemisphereLight(0xffffff,0x3a3a3a,0.8);
   const key =new THREE.DirectionalLight(0xffffff,0.9); key.position.set(2,4,3);
   const fill=new THREE.DirectionalLight(0xffffff,0.35); fill.position.set(-2,2,-2);
   scene.add(hemi,key,fill);
 
-  const controls=new OrbitControls(camera,renderer.domElement);
-  controls.enableZoom=controls.enablePan=false;
+  new OrbitControls(camera,renderer.domElement).enableZoom=false;
 
   clock=new THREE.Clock();
   window.addEventListener("resize",()=>{
@@ -50,17 +55,17 @@ function initThree(){
     renderer.setSize(window.innerWidth,window.innerHeight);
   });
 
-  // one-time audio unlock on first user gesture (prevents silent playback)
+  // audio unlock
   function unlockAudio(){
-    if (window._audioUnlocked) return;
+    if(window._audioUnlocked) return;
     try{
       const ctx=new (window.AudioContext||window.webkitAudioContext)();
       ctx.resume();
-      window._audioUnlocked = true;
+      window._audioUnlocked=true;
       console.log("🔊 Audio unlocked");
     }catch{}
   }
-  document.addEventListener("pointerdown", unlockAudio, { once:true });
+  document.addEventListener("pointerdown",unlockAudio,{once:true});
 }
 
 // ---------- MATERIAL ----------
@@ -69,9 +74,7 @@ function applyBoneMaterial(root){
   root.traverse(o=>{
     if(o.isMesh){
       o.material=new THREE.MeshStandardMaterial({
-        color:boneColor,
-        roughness:0.55,
-        metalness:0.08
+        color:boneColor,roughness:0.55,metalness:0.08
       });
     }
   });
@@ -102,14 +105,12 @@ async function loadClip(name){
   return (cache[name]=fbx.animations[0]);
 }
 
-// smoother global blending (fadeIn/fadeOut overlap)
 async function play(name,loop=THREE.LoopRepeat,fade=0.9){
   if(!mixer) return;
   const clip=await loadClip(name);
   if(!clip) return;
   const next=mixer.clipAction(clip);
-  next.enabled=true;
-  next.reset();
+  next.enabled=true; next.reset();
   next.setLoop(loop,Infinity);
   next.clampWhenFinished=true;
   if(currentAction && currentAction!==next){
@@ -118,76 +119,54 @@ async function play(name,loop=THREE.LoopRepeat,fade=0.9){
   }
   next.play();
   currentAction=next;
-  // console.log("🎬 Bob:",name);
 }
 
-// ---------- CHAT (with self-reference filter) ----------
+// ---------- CHAT ----------
 async function askBob(prompt){
-  try{
-    // subtle waiting motion so he doesn’t freeze
-    await play("Breathing Idle",THREE.LoopRepeat,0.6);
-
-    const r=await fetch(WORKER_URL,{
-      method:"POST",
-      headers:{ "Content-Type":"application/json" },
-      body:JSON.stringify({ prompt })
+  try {
+    const r = await fetch(WORKER_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt })
     });
-    const j=await r.json();
-    let reply=j.reply || "Well shoot, reckon I'm tongue-tied.";
-
-    // Self-reference filter → first person
-    reply = reply
-      .replace(/\b[Bb]ob\s(thinks|believes|says|knows|feels|is)/g,"I $1")
-      .replace(/\b[Bb]ob's\b/g,"my")
-      .replace(/\b[Bb]obself\b/g,"myself")
-      .replace(/\b[Bb]ob\b/g,"I")
-      .replace(/\s{2,}/g," ")
-      .trim();
-
+    const j = await r.json();
+    const reply = j.reply || "Well shoot, reckon I'm tongue-tied.";
     await say(reply);
-  }catch(e){
-    console.warn("⚠️ Chat error:",e);
+  } catch(e) {
+    console.warn("⚠️ Chat error:", e);
   }
 }
 
-// ---------- SPEECH (story pacing + pitch/speed + amplitude sway) ----------
+// ---------- SPEECH ----------
 async function say(text){
   if(isSpeaking || !text) return;
   isSpeaking=true;
   try{
     recognition?.stop();
 
-    // storytelling rhythm: tiny pre-breath + emotion pick
     let mood="Talking";
     if(/haha|lol|😂/.test(text)) mood="Laughing";
-    else if(/\?$/.test(text))   mood="Shaking Head No";
-    else if(/[!]$/.test(text))  mood="Yelling Out";
+    else if(/\?$/.test(text)) mood="Shaking Head No";
+    else if(/[!]$/.test(text)) mood="Yelling Out";
 
-    // take a small breath before lines that have commas / ellipses
-    const prePause = (text.includes(",") || text.includes("...")) ? 350 : 180;
-
+    const prePause=(text.includes(",")||text.includes("..."))?350:180;
     await play("Breathing Idle",THREE.LoopOnce,0.6);
-    await new Promise(r=>setTimeout(r, prePause));
+    await new Promise(r=>setTimeout(r,prePause));
     await play(mood,THREE.LoopRepeat,0.6);
 
     const resp=await fetch(`${WORKER_URL}/tts`,{
       method:"POST",
       headers:{ "Content-Type":"application/json" },
       body:JSON.stringify({
-        text,
-        voice: VOICE.name,
-        speed: VOICE.speed,
-        pitch: VOICE.pitch
+        text,voice:VOICE.name,speed:VOICE.speed,pitch:VOICE.pitch
       })
     });
-
     if(!resp.ok) throw new Error(`TTS ${resp.status}`);
     const blob=await resp.blob();
     const url=URL.createObjectURL(blob);
     const audio=new Audio(url);
     audio.volume=1.0;
 
-    // amplitude-driven sway (gentle)
     const ctx=new (window.AudioContext||window.webkitAudioContext)();
     const src=ctx.createMediaElementSource(audio);
     const analyser=ctx.createAnalyser();
@@ -204,38 +183,21 @@ async function say(text){
       const amp=avg/128;
       if(model){
         phase+=0.08;
-        // smooth storytelling sway
-        model.rotation.y += (Math.sin(phase*0.45)*0.025*amp - model.rotation.y)*0.20;
-        model.rotation.x += (Math.sin(phase*0.90)*0.015*amp - model.rotation.x)*0.20;
+        model.rotation.y+=(Math.sin(phase*0.45)*0.025*amp-model.rotation.y)*0.20;
+        model.rotation.x+=(Math.sin(phase*0.9)*0.015*amp-model.rotation.x)*0.20;
       }
       if(isSpeaking) requestAnimationFrame(animateFromAudio);
     }
     requestAnimationFrame(animateFromAudio);
 
-    // occasional hand gesture during long lines
-    let gestureTimer=null;
-    const gestureAnims=["Waving","Shrugging","Shaking Head No"];
-    if(text.split(/\s+/).length>10){
-      gestureTimer=setInterval(()=>{
-        if(!isSpeaking || asleep) return;
-        const pick=gestureAnims[Math.floor(Math.random()*gestureAnims.length)];
-        play(pick,THREE.LoopOnce,0.6);
-        setTimeout(()=>{ if(isSpeaking && !asleep) play("Talking",THREE.LoopRepeat,0.5); },1500);
-      }, 3500 + Math.random()*2000);
-    }
-
     audio.onended=()=>{
-      if(gestureTimer) clearInterval(gestureTimer);
       isSpeaking=false;
       model.rotation.set(0,0,0);
       ctx.close();
       if(!asleep) play(DEFAULT_IDLE,THREE.LoopRepeat,1.0);
       try{recognition?.start();}catch{}
     };
-
-    // ensure audio is allowed by browser; if not, will have been unlocked on first click
     await audio.play();
-
   }catch(e){
     console.warn("⚠️ TTS failed:",e);
     isSpeaking=false;
@@ -264,8 +226,7 @@ function initSpeech(){
     if(!isSpeaking){
       if(/sleep|nap/.test(text)) goSleep();
       else if(/hey\s*bob/.test(text)) heyBobDance();
-      else {
-        // instant listening feedback
+      else{
         play("Looking Around",THREE.LoopOnce,0.5);
         say("Hmm...");
         askBob(text);
@@ -274,9 +235,11 @@ function initSpeech(){
   };
 
   recognition.onerror=e=>{
+    if(e.error==="no-speech") return; // ignore harmless
     console.warn("🎙️ Mic error:",e.error);
-    if(e.error==="not-allowed") alert("Enable microphone permissions and reload the page.");
+    if(e.error==="not-allowed") alert("Enable microphone permissions and reload.");
   };
+
   recognition.onend=()=>{
     if(!isSpeaking && !asleep){
       try{recognition.start();}catch{}
@@ -308,10 +271,10 @@ async function heyBobDance(){
   setTimeout(()=>play(DEFAULT_IDLE,THREE.LoopRepeat,1.0),7000);
 }
 
-// ---------- IDLE / SKITS / STORY GESTURES / SLEEP ----------
+// ---------- IDLE / SKITS ----------
 function startIdleShifts(){
   setInterval(async()=>{
-    if(!mixer || asleep || isSpeaking) return;
+    if(!mixer||asleep||isSpeaking) return;
     const since=Date.now()-lastInteraction;
     if(since>10000){
       const next=IDLE_POOL[Math.floor(Math.random()*IDLE_POOL.length)];
@@ -321,31 +284,19 @@ function startIdleShifts(){
 }
 function startRandomSkits(){
   setInterval(async()=>{
-    if(!mixer || asleep || isSpeaking) return;
+    if(!mixer||asleep||isSpeaking) return;
     const since=Date.now()-lastInteraction;
     if(since>20000){
       const pick=SKIT_POOL[Math.floor(Math.random()*SKIT_POOL.length)];
       await play(pick.anim,THREE.LoopOnce,1.0);
       await say(pick.lines[Math.floor(Math.random()*pick.lines.length)]);
-      setTimeout(()=>{ if(!asleep) play(DEFAULT_IDLE,THREE.LoopRepeat,1.0); },5000);
+      setTimeout(()=>{if(!asleep)play(DEFAULT_IDLE,THREE.LoopRepeat,1.0);},5000);
     }
-  },60000 + Math.random()*60000);
-}
-function startStoryGestures(){
-  setInterval(async()=>{
-    if(!mixer || asleep || isSpeaking) return;
-    const since=Date.now()-lastInteraction;
-    if(since>8000){
-      const picks=["Shrugging","Waving","Looking Around","Laughing"];
-      const pick=picks[Math.floor(Math.random()*picks.length)];
-      await play(pick,THREE.LoopOnce,0.8);
-      setTimeout(()=>{ if(!asleep) play(DEFAULT_IDLE,THREE.LoopRepeat,0.8); },4000);
-    }
-  },10000);
+  },60000+Math.random()*60000);
 }
 function startSleepTimer(){
   setInterval(()=>{
-    if(asleep || isSpeaking) return;
+    if(asleep||isSpeaking) return;
     const idle=Date.now()-lastInteraction;
     if(idle>120000) goSleep();
   },10000);
@@ -364,6 +315,11 @@ async function initBob(){
   try{
     initThree();
     await loadRig();
+
+    console.log("⏳ Preloading animations...");
+    for(const n of PRELOAD_ANIMS){ await loadClip(n); }
+    console.log("✅ Animations ready.");
+
     await play(DEFAULT_IDLE);
     document.body.addEventListener("click",()=>{
       if(!recognition){
@@ -373,10 +329,9 @@ async function initBob(){
     },{once:true});
     startIdleShifts();
     startRandomSkits();
-    startStoryGestures();
     startSleepTimer();
     animate();
-  }catch(e){ console.error("❌ Boot failed:",e); }
+  }catch(e){console.error("❌ Boot failed:",e);}
 }
 
 setTimeout(initBob,800);
