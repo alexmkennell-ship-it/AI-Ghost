@@ -107,19 +107,37 @@ async function play(name,loop=THREE.LoopRepeat,fade=0.9){
 }
 
 // ---------- CHAT ----------
+// ---------- CHAT ----------
 async function askBob(prompt){
-  try{
-    await play("Breathing Idle",THREE.LoopRepeat,0.8); // subtle filler motion
-    const r=await fetch(WORKER_URL,{
-      method:"POST",
-      headers:{ "Content-Type":"application/json" },
-      body:JSON.stringify({prompt})
+  try {
+    await play("Breathing Idle", THREE.LoopRepeat, 0.8); // subtle waiting motion
+
+    const r = await fetch(WORKER_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt })
     });
-    const j=await r.json();
-    const reply=j.reply || "Well shoot, reckon I'm tongue-tied.";
+
+    const j = await r.json();
+    let reply = j.reply || "Well shoot, reckon I'm tongue-tied.";
+
+    // --- 🔧 Self-reference filter ---
+    // Replace "Bob" or "bob" with first-person terms
+    reply = reply
+      .replace(/\b[Bb]ob\s(thinks|believes|says|knows|feels|is)/g, "I $1")
+      .replace(/\b[Bb]ob\b/g, "I")
+      .replace(/\b[Bb]ob's\b/g, "my")
+      .replace(/\b[Bb]obself\b/g, "myself");
+
+    // Remove odd leftover double spaces after replacements
+    reply = reply.replace(/\s{2,}/g, " ").trim();
+
     await say(reply);
-  }catch(e){ console.warn("⚠️ Chat error:",e); }
+  } catch (e) {
+    console.warn("⚠️ Chat error:", e);
+  }
 }
+
 
 // ---------- SPEECH ----------
 async function say(text){
