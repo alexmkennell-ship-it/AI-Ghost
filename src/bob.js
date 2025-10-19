@@ -172,6 +172,23 @@ async function say(text){
   }
 }
 
+// ---------- CHAT ----------
+async function askBob(prompt){
+  try {
+    const r = await fetch(WORKER_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt })
+    });
+    const j = await r.json();
+    const reply = j.reply || "Well shoot, reckon I'm tongue-tied.";
+    await say(reply);
+  } catch(e) {
+    console.warn("⚠️ Chat error:", e);
+  }
+}
+
+
 // ---------- MIC ----------
 function initSpeech(){
   const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
