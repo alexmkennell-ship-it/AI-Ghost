@@ -57,14 +57,31 @@ function applyBoneMaterial(root){
 }
 
 // ---------- MODEL / ANIMS ----------
-async function loadRig(){
+// ---------- MODEL / ANIMS ----------
+async function loadRig() {
   const loader = new FBXLoader();
   const fbx = await loader.loadAsync(FBX_BASE + "T-Pose.fbx");
   fbx.scale.setScalar(1);
+
   applyBoneMaterial(fbx);
   scene.add(fbx);
+
   model = fbx;
   mixer = new THREE.AnimationMixer(model);
+
+  // --- Center Bob on screen ---
+  const box = new THREE.Box3().setFromObject(model);
+  const center = box.getCenter(new THREE.Vector3());
+  const size = box.getSize(new THREE.Vector3()).length();
+
+  // Move Bob so his center sits at the world origin (0,0,0)
+  model.position.sub(center);
+
+  // Re-aim the camera at the new centered position
+  camera.lookAt(0, 1, 0);
+
+  // Adjust camera distance so full body fits in view
+  camera.position.set(0, 1.6, size * 0.55);
 }
 
 async function loadClip(name){
