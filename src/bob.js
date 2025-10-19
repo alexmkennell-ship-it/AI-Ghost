@@ -7,6 +7,38 @@ const WORKER_URL = "https://ghostaiv1.alexmkennell.workers.dev";
 const FBX_BASE = "https://pub-30bcc0b2a7044074a19efdef19f69857.r2.dev/models/";
 const TEXTURE_URL = `${FBX_BASE}Boney_Bob_the_skeleto_1017235951_texture.png`;
 
+// Keep Bob's animation catalogue in sync with the authoritative list used by
+// the worker deployment.  This list intentionally mirrors the configuration in
+// the latest "Autonomous Bob v8.1" snippet so we load the same clips that are
+// available in production.
+export const BOB_ANIMATIONS = Object.freeze([
+  "Neutral Idle",
+  "Breathing Idle",
+  "Idle",
+  "Bored",
+  "Looking Around",
+  "Lying Down",
+  "Sleeping Idle",
+  "Sleeping Idle (1)",
+  "Waking",
+  "Silly Dancing",
+  "Walkingsneakily",
+  "Walking",
+  "Walkinglikezombie",
+  "Stop Walking",
+  "Waving",
+  "Shaking Head No",
+  "Shrugging",
+  "Talking",
+  "Laughing",
+  "Defeated",
+  "Sad Idle",
+  "Yelling Out",
+  "Waking",
+]);
+
+const DEFAULT_IDLE = BOB_ANIMATIONS[0];
+
 let scene, camera, renderer, clock, mixer, model, currentAction;
 let recognition, asleep = false, isSpeaking = false;
 
@@ -94,8 +126,12 @@ async function loadClip(name) {
   return clip;
 }
 
-async function play(name) {
+async function play(name = DEFAULT_IDLE) {
   if (!mixer) return;
+  if (!BOB_ANIMATIONS.includes(name)) {
+    console.warn(`⚠️ Unknown animation requested: ${name}`);
+    name = DEFAULT_IDLE;
+  }
   const clip = await loadClip(name);
   const action = mixer.clipAction(clip);
   action.reset();
@@ -155,7 +191,7 @@ function initSpeech() {
     console.log("🗣️ You said:", text);
     if (text.includes("hey bob") && asleep) {
       asleep = false;
-      play("Neutral Idle");
+      play(DEFAULT_IDLE);
       say("Mornin’, partner. You woke me up from a dead nap!");
       return;
     }
@@ -183,7 +219,7 @@ async function initBob() {
   try {
     initThree();
     await loadRig();
-    await play("Neutral Idle");
+    await play(DEFAULT_IDLE);
     document.body.addEventListener(
       "click",
       () => {
