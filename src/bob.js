@@ -7,6 +7,161 @@ const WORKER_URL = "https://ghostaiv1.alexmkennell.workers.dev";
 const FBX_BASE = "https://pub-30bcc0b2a7044074a19efdef19f69857.r2.dev/models/";
 const TEXTURE_URL = `${FBX_BASE}Boney_Bob_the_skeleto_1017235951_texture.png`;
 
+// Keep Bob's animation catalogue in sync with the authoritative list used by
+// the worker deployment.  We dedupe here because the worker snippet repeats
+// "Waking" and we only need to load each clip once.
+const RAW_ANIMATION_LIST = [
+  "Neutral Idle",
+  "Breathing Idle",
+  "Idle",
+  "Bored",
+  "Looking Around",
+  "Lying Down",
+  "Sleeping Idle",
+  "Sleeping Idle (1)",
+  "Waking",
+  "Silly Dancing",
+  "Walkingsneakily",
+  "Walking",
+  "Walkinglikezombie",
+  "Stop Walking",
+  "Waving",
+  "Shaking Head No",
+  "Shrugging",
+  "Talking",
+  "Laughing",
+  "Defeated",
+  "Sad Idle",
+  "Yelling Out",
+];
+
+export const BOB_ANIMATIONS = Object.freeze([...new Set(RAW_ANIMATION_LIST)]);
+export const ANIMS = BOB_ANIMATIONS;
+
+// Bob's expanded skit library pairs each featured animation (or sequence of
+// animations) with voice lines voiced by Onyx.  Consumers can iterate over this
+// structure to surface curated combos in UIs or trigger them programmatically.
+export const BOB_SKITS = Object.freeze([
+  Object.freeze({
+    category: "Idle / Chatter",
+    skits: Object.freeze([
+      Object.freeze({
+        animations: Object.freeze(["Neutral Idle"]),
+        lines: Object.freeze([
+          "Just me and the tumbleweeds again.",
+        ]),
+      }),
+      Object.freeze({
+        animations: Object.freeze(["Looking Around"]),
+        lines: Object.freeze([
+          "You ever get that feelin' someone's watchin' ya? … Nah.",
+        ]),
+      }),
+      Object.freeze({
+        animations: Object.freeze(["Bored"]),
+        lines: Object.freeze([
+          "If bones could snore, I'd be rattlin' the rafters right now.",
+        ]),
+      }),
+      Object.freeze({
+        animations: Object.freeze(["Breathing Idle"]),
+        lines: Object.freeze([
+          "Ahhh, nice night to be undead.",
+        ]),
+      }),
+      Object.freeze({
+        animations: Object.freeze(["Sad Idle"]),
+        lines: Object.freeze([
+          "Used to dance every Saturday night… now I just creak.",
+        ]),
+      }),
+    ]),
+  }),
+  Object.freeze({
+    category: "Greeting / Social",
+    skits: Object.freeze([
+      Object.freeze({
+        animations: Object.freeze(["Waving"]),
+        lines: Object.freeze([
+          "Howdy, stranger! You're lookin' more alive than me!",
+        ]),
+      }),
+      Object.freeze({
+        animations: Object.freeze(["Laughing"]),
+        lines: Object.freeze([
+          "Heh, that joke really tickled my funny bone!",
+        ]),
+      }),
+      Object.freeze({
+        animations: Object.freeze(["Shrugging"]),
+        lines: Object.freeze([
+          "Beats me! I just work here in the afterlife.",
+        ]),
+      }),
+      Object.freeze({
+        animations: Object.freeze(["Shaking Head No"]),
+        lines: Object.freeze([
+          "Nope. Not today. Not even for all the gold in the desert.",
+        ]),
+      }),
+    ]),
+  }),
+  Object.freeze({
+    category: "Sleep / Wake",
+    skits: Object.freeze([
+      Object.freeze({
+        animations: Object.freeze(["Lying Down", "Sleeping Idle"]),
+        lines: Object.freeze([
+          "Don't mind me, just restin' my femurs.",
+        ]),
+      }),
+      Object.freeze({
+        animations: Object.freeze(["Waking"]),
+        lines: Object.freeze([
+          "Whoo-wee, dreamt I was dancin' with a banshee again.",
+        ]),
+      }),
+    ]),
+  }),
+  Object.freeze({
+    category: "Fun / Random",
+    skits: Object.freeze([
+      Object.freeze({
+        animations: Object.freeze(["Silly Dancing"]),
+        lines: Object.freeze([
+          "They call this one the Rattle 'n Roll!",
+        ]),
+      }),
+      Object.freeze({
+        animations: Object.freeze(["Walkinglikezombie"]),
+        lines: Object.freeze([
+          "Brains? Nah, I'm more of a bones kinda guy.",
+        ]),
+      }),
+      Object.freeze({
+        animations: Object.freeze(["Walkingsneakily"]),
+        lines: Object.freeze([
+          "Gotta stay quiet… don't wanna wake the dead. Oh wait—too late.",
+        ]),
+      }),
+      Object.freeze({
+        animations: Object.freeze(["Defeated"]),
+        lines: Object.freeze([
+          "Well… that went about as smooth as a cactus pillow.",
+        ]),
+      }),
+      Object.freeze({
+        animations: Object.freeze(["Yelling Out"]),
+        lines: Object.freeze([
+          "YEEHAW! Still got some spirit left in me, don't I?",
+        ]),
+      }),
+    ]),
+  }),
+]);
+
+const DEFAULT_IDLE = BOB_ANIMATIONS[0];
+
 let scene, camera, renderer, clock, mixer, model, currentAction;
 let recognition, asleep = false, isSpeaking = false;
 
@@ -94,8 +249,12 @@ async function loadClip(name) {
   return clip;
 }
 
-async function play(name) {
+async function play(name = DEFAULT_IDLE) {
   if (!mixer) return;
+  if (!BOB_ANIMATIONS.includes(name)) {
+    console.warn(`⚠️ Unknown animation requested: ${name}`);
+    name = DEFAULT_IDLE;
+  }
   const clip = await loadClip(name);
   const action = mixer.clipAction(clip);
   action.reset();
@@ -155,7 +314,7 @@ function initSpeech() {
     console.log("🗣️ You said:", text);
     if (text.includes("hey bob") && asleep) {
       asleep = false;
-      play("Neutral Idle");
+      play(DEFAULT_IDLE);
       say("Mornin’, partner. You woke me up from a dead nap!");
       return;
     }
@@ -183,7 +342,7 @@ async function initBob() {
   try {
     initThree();
     await loadRig();
-    await play("Neutral Idle");
+    await play(DEFAULT_IDLE);
     document.body.addEventListener(
       "click",
       () => {
