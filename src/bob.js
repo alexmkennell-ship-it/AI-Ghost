@@ -8,7 +8,7 @@ console.log("🎬 Bob v10.7 — Cinematic online");
 const WORKER_URL = "https://ghostaiv1.alexmkennell.workers.dev";
 const FBX_BASE   = "https://pub-30bcc0b2a7044074a19efdef19f69857.r2.dev/models/Neutral%20Idle.fbx";
 const DEFAULT_IDLE = "Neutral Idle";
-const VOICE = { name:"onyx", speed:0.9, pitch:-1.0 };
+const VOICE = { name:"onyx", speed:0.8, pitch:-2.0 };
 
 // ---------- Authoritative animation catalog ----------
 const BOB_ANIMATIONS = Object.freeze([
