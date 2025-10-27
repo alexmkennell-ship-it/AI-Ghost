@@ -3,7 +3,7 @@ import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.165.0/build/three.m
 import { FBXLoader } from "https://cdn.jsdelivr.net/npm/three@0.165.0/examples/jsm/loaders/FBXLoader.js";
 import { OrbitControls } from "https://cdn.jsdelivr.net/npm/three@0.165.0/examples/jsm/controls/OrbitControls.js";
 
-console.log("🎬 Bob v11 — Cinematic online");
+console.log("🎬 Bob v11.1 — Cinematic online and Debug");
 
 const WORKER_URL = "https://ghostaiv1.alexmkennell.workers.dev";
 const FBX_BASE   = "https://pub-30bcc0b2a7044074a19efdef19f69857.r2.dev/models/";
@@ -171,12 +171,86 @@ async function loadRig(){
   model.position.sub(center);
   camera.lookAt(0,size.y*0.5,0);
 
-// --- Camera auto-position fix (OUTSIDE view, texture-safe) ---
-const distance = Math.max(size.y * 2.0, 60); // always pull back at least 60 units
+// --- Camera auto-position fix (Debug UI Edition) ---
+const distance = Math.max(size.y * 2.0, 80);
 const height = size.y * 0.5;
 
-camera.position.set(0, height, distance * 2);
+// Position camera safely behind Bob
+camera.position.set(0, height, -distance);
 camera.lookAt(0, height * 0.5, 0);
+
+// --- Lighting ---
+const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
+scene.add(ambientLight);
+const dirLight = new THREE.DirectionalLight(0xffffff, 1);
+dirLight.position.set(100, 200, -100);
+scene.add(dirLight);
+
+// --- Debug Controls & Overlay ---
+let debugMode = false;
+let moveSpeed = 5;
+let rotSpeed = 0.05;
+
+// Create debug UI overlay
+const debugUI = document.createElement('div');
+debugUI.style.position = 'fixed';
+debugUI.style.bottom = '20px';
+debugUI.style.right = '20px';
+debugUI.style.padding = '10px 15px';
+debugUI.style.background = 'rgba(0,0,0,0.7)';
+debugUI.style.color = '#00ff88';
+debugUI.style.fontFamily = 'monospace';
+debugUI.style.fontSize = '14px';
+debugUI.style.borderRadius = '10px';
+debugUI.style.display = 'none';
+debugUI.style.zIndex = '9999';
+debugUI.innerHTML = '<b>🧭 Debug Mode</b><br>' +
+'Ctrl+D = Toggle Debug<br>' +
+'W/S = Forward/Back<br>' +
+'A/D = Left/Right<br>' +
+'↑/↓ = Up/Down<br>' +
+'←/→ = Rotate<br>' +
+'L = Toggle Light<br>' +
+'1–9 = Play Anim<br>';
+document.body.appendChild(debugUI);
+
+window.addEventListener("keydown", (e) => {
+  if (e.ctrlKey && e.code === "KeyD") {
+    debugMode = !debugMode;
+    debugUI.style.display = debugMode ? 'block' : 'none';
+    console.log(debugMode ? "🧭 Debug Mode: ON" : "🧭 Debug Mode: OFF");
+  }
+  if (!debugMode) return;
+
+  const dir = new THREE.Vector3();
+  camera.getWorldDirection(dir);
+
+  switch (e.code) {
+    case "KeyW": camera.position.addScaledVector(dir, moveSpeed); break;
+    case "KeyS": camera.position.addScaledVector(dir, -moveSpeed); break;
+    case "KeyA": camera.position.x -= moveSpeed; break;
+    case "KeyD": camera.position.x += moveSpeed; break;
+    case "ArrowUp": camera.position.y += moveSpeed; break;
+    case "ArrowDown": camera.position.y -= moveSpeed; break;
+    case "ArrowLeft": camera.rotation.y += rotSpeed; break;
+    case "ArrowRight": camera.rotation.y -= rotSpeed; break;
+    case "KeyL":
+      dirLight.visible = !dirLight.visible;
+      console.log("💡 Directional light:", dirLight.visible ? "ON" : "OFF");
+      break;
+    default:
+      if (e.code.startsWith("Digit")) {
+        const idx = parseInt(e.code.replace("Digit", ""), 10);
+        const clipName = [...availableClips][idx - 1];
+        if (clipName) {
+          console.log("🎞️ Playing animation:", clipName);
+          playClip(clipName);
+        }
+      }
+      break;
+  }
+  console.log("📷 Camera:", camera.position);
+});
 
 if (typeof controls !== 'undefined') {
   controls.target.set(0, height * 0.5, 0);
@@ -185,7 +259,7 @@ if (typeof controls !== 'undefined') {
   controls.update();
 }
 
-console.log("🎥 Camera moved OUTSIDE at:", camera.position);
+console.log("🎥 Camera positioned safely behind Bob:", camera.position);
 
 }
 
