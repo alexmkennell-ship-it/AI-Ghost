@@ -156,18 +156,7 @@ function applyGhostMaterial(root){
 
 // ---------- Model ----------
 async function loadRig(){
-  
-// --- Texture manager to skip .fbm warnings ---
-const manager = new THREE.LoadingManager();
-manager.setURLModifier((url) => {
-  if (url.endsWith('.fbm') || url.includes('.fbm/')) {
-    console.warn('⚠️ Skipping missing .fbm texture:', url);
-    return ''; // skip loading
-  }
-  return url;
-});
-
-  const loader=new FBXLoader(manager);
+  const loader=new FBXLoader();
   const fbx=await loader.loadAsync(FBX_BASE+encodeURIComponent(DEFAULT_IDLE)+".fbx");
   fbx.scale.setScalar(1);
   applyGhostMaterial(fbx);
@@ -182,17 +171,21 @@ manager.setURLModifier((url) => {
   model.position.sub(center);
   camera.lookAt(0,size.y*0.5,0);
 
-// --- Camera auto-position fix ---
-const distance = Math.min(Math.max(Math.max(size.x, size.y, size.z) * 1.5, 3), 25);
-camera.position.set(0, size.y * 0.6, distance);
+// --- Camera auto-position fix (final) ---
+const distance = Math.max(size.y * 2.0, 40); // pull back 2x Bob's height, min 40
+const height = size.y * 0.6;
+
+camera.position.set(0, height, distance);
 camera.lookAt(0, size.y * 0.4, 0);
+
 if (typeof controls !== 'undefined') {
   controls.target.set(0, size.y * 0.4, 0);
-  controls.minDistance = 2;
-  controls.maxDistance = 50;
+  controls.minDistance = 10;
+  controls.maxDistance = distance * 3;
   controls.update();
 }
-console.log("🎥 Camera positioned at:", camera.position);
+
+console.log("🎥 Final Camera positioned at:", camera.position);
 
 }
 
@@ -200,18 +193,7 @@ console.log("🎥 Camera positioned at:", camera.position);
 async function loadClip(name){
   if(cache[name]) return cache[name];
   try{
-    
-// --- Texture manager to skip .fbm warnings ---
-const manager = new THREE.LoadingManager();
-manager.setURLModifier((url) => {
-  if (url.endsWith('.fbm') || url.includes('.fbm/')) {
-    console.warn('⚠️ Skipping missing .fbm texture:', url);
-    return ''; // skip loading
-  }
-  return url;
-});
-
-  const loader=new FBXLoader(manager);
+    const loader=new FBXLoader();
     const fbx=await loader.loadAsync(FBX_BASE+encodeURIComponent(name)+".fbx");
     const clip=fbx.animations?.[0];
     if(clip){ cache[name]=clip; availableClips.add(name); }
