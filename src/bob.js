@@ -6,7 +6,7 @@ import { OrbitControls } from "https://cdn.jsdelivr.net/npm/three@0.165.0/exampl
 console.log("🎬 Bob v10.7 — Cinematic online");
 
 const WORKER_URL = "https://ghostaiv1.alexmkennell.workers.dev";
-const FBX_BASE   = "https://pub-30bcc0b2a7044074a19efdef19f69857.r2.dev/models/";
+const FBX_BASE   = "https://pub-30bcc0b2a7044074a19efdef19f69857.r2.dev/models/Neutral%20Idle.fbx";
 const DEFAULT_IDLE = "Neutral Idle";
 const VOICE = { name:"onyx", speed:0.8, pitch:-2.0 };
 
@@ -65,8 +65,8 @@ function initThree(){
   document.body.appendChild(renderer.domElement);
 
   scene=new THREE.Scene();
-  camera=new THREE.PerspectiveCamera(75,window.innerWidth/window.innerHeight,0.1,100);
-  camera.position.set(0,1.6,50); // slightly closer than v10.6
+  camera=new THREE.PerspectiveCamera(45,window.innerWidth/window.innerHeight,0.1,100);
+  camera.position.set(0,1.6,5.0); // slightly closer than v10.6
 
   const hemi=new THREE.HemisphereLight(0xffffff,0x3a3a3a,0.9);
   const key =new THREE.DirectionalLight(0xffffff,1.0); key.position.set(2.2,4.2,3.2);
@@ -170,6 +170,15 @@ async function loadRig(){
   const size=box.getSize(new THREE.Vector3());
   model.position.sub(center);
   camera.lookAt(0,size.y*0.5,0);
+
+// --- Camera auto-position fix ---
+const distance = Math.max(size.x, size.y, size.z) * 1.5;
+camera.position.set(0, size.y * 0.5, distance);
+if (typeof controls !== 'undefined') {
+  controls.target.set(0, size.y * 0.5, 0);
+  controls.update();
+}
+
 }
 
 // ---------- Animations (preload + queued plays) ----------
