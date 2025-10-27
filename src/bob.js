@@ -3,7 +3,7 @@ import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.165.0/build/three.m
 import { FBXLoader } from "https://cdn.jsdelivr.net/npm/three@0.165.0/examples/jsm/loaders/FBXLoader.js";
 import { OrbitControls } from "https://cdn.jsdelivr.net/npm/three@0.165.0/examples/jsm/controls/OrbitControls.js";
 
-console.log("🎬 Bob v10.7 — Cinematic online");
+console.log("🎬 Bob v11 — Cinematic online");
 
 const WORKER_URL = "https://ghostaiv1.alexmkennell.workers.dev";
 const FBX_BASE   = "https://pub-30bcc0b2a7044074a19efdef19f69857.r2.dev/models/";
@@ -159,7 +159,7 @@ async function loadRig(){
   const loader=new FBXLoader();
   const fbx=await loader.loadAsync(FBX_BASE+encodeURIComponent(DEFAULT_IDLE)+".fbx");
   fbx.scale.setScalar(1);
-  applyGhostMaterial(fbx);
+  // Removed ghost material for texture visibility
   scene.add(fbx);
 
   model=fbx;
@@ -171,21 +171,21 @@ async function loadRig(){
   model.position.sub(center);
   camera.lookAt(0,size.y*0.5,0);
 
-// --- Camera auto-position fix (final) ---
-const distance = Math.max(size.y * 2.0, 40); // pull back 2x Bob's height, min 40
-const height = size.y * 0.6;
+// --- Camera auto-position fix (OUTSIDE view, texture-safe) ---
+const distance = Math.max(size.y * 2.0, 60); // always pull back at least 60 units
+const height = size.y * 0.5;
 
-camera.position.set(0, height, distance);
-camera.lookAt(0, size.y * 0.4, 0);
+camera.position.set(0, height, distance * 2);
+camera.lookAt(0, height * 0.5, 0);
 
 if (typeof controls !== 'undefined') {
-  controls.target.set(0, size.y * 0.4, 0);
-  controls.minDistance = 10;
-  controls.maxDistance = distance * 3;
+  controls.target.set(0, height * 0.5, 0);
+  controls.minDistance = 20;
+  controls.maxDistance = distance * 4;
   controls.update();
 }
 
-console.log("🎥 Final Camera positioned at:", camera.position);
+console.log("🎥 Camera moved OUTSIDE at:", camera.position);
 
 }
 
