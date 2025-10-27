@@ -66,7 +66,7 @@ function initThree(){
 
   scene=new THREE.Scene();
   camera=new THREE.PerspectiveCamera(75,window.innerWidth/window.innerHeight,0.1,100);
-  camera.position.set(0,1.6,19); // slightly closer than v10.6
+  camera.position.set(0,1.6,50); // slightly closer than v10.6
 
   const hemi=new THREE.HemisphereLight(0xffffff,0x3a3a3a,0.9);
   const key =new THREE.DirectionalLight(0xffffff,1.0); key.position.set(2.2,4.2,3.2);
