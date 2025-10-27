@@ -155,31 +155,39 @@ function applyGhostMaterial(root){
 }
 
 // ---------- Model ----------
-async function loadRig(){
-  const loader=new FBXLoader();
-  const fbx=await loader.loadAsync(FBX_BASE+encodeURIComponent(DEFAULT_IDLE)+".fbx");
+async function loadRig() {
+  const loader = new FBXLoader();
+  const fbx = await loader.loadAsync(FBX_BASE + encodeURIComponent(DEFAULT_IDLE) + ".fbx");
   fbx.scale.setScalar(1);
   applyGhostMaterial(fbx);
   scene.add(fbx);
 
-  model=fbx;
-  mixer=new THREE.AnimationMixer(model);
+  model = fbx;
+  mixer = new THREE.AnimationMixer(model);
 
-  const box=new THREE.Box3().setFromObject(model);
-  const center=box.getCenter(new THREE.Vector3());
-  const size=box.getSize(new THREE.Vector3());
+  // Center the model
+  const box = new THREE.Box3().setFromObject(model);
+  const center = box.getCenter(new THREE.Vector3());
+  const size = box.getSize(new THREE.Vector3());
   model.position.sub(center);
-  camera.lookAt(0,size.y*0.5,0);
 
-// --- Camera auto-position fix ---
-const distance = Math.max(size.x, size.y, size.z) * 1.5;
-camera.position.set(0, size.y * 0.5, distance);
-if (typeof controls !== 'undefined') {
-  controls.target.set(0, size.y * 0.5, 0);
-  controls.update();
+  // --- New camera fix ---
+  const distance = Math.min(Math.max(Math.max(size.x, size.y, size.z) * 1.5, 3), 25); // between 3 and 25
+  camera.position.set(0, size.y * 0.6, distance);
+  camera.lookAt(0, size.y * 0.4, 0);
+
+  // Optional: adjust OrbitControls if present
+  if (typeof controls !== 'undefined') {
+    controls.target.set(0, size.y * 0.4, 0);
+    controls.minDistance = 2;
+    controls.maxDistance = 50;
+    controls.update();
+  }
+
+  console.log("🎥 Camera positioned at:", camera.position);
 }
 
-}
+
 
 // ---------- Animations (preload + queued plays) ----------
 async function loadClip(name){
