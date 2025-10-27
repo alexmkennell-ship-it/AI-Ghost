@@ -155,45 +155,63 @@ function applyGhostMaterial(root){
 }
 
 // ---------- Model ----------
-async function loadRig() {
-  const loader = new FBXLoader();
-  const fbx = await loader.loadAsync(FBX_BASE + encodeURIComponent(DEFAULT_IDLE) + ".fbx");
+async function loadRig(){
+  
+// --- Texture manager to skip .fbm warnings ---
+const manager = new THREE.LoadingManager();
+manager.setURLModifier((url) => {
+  if (url.endsWith('.fbm') || url.includes('.fbm/')) {
+    console.warn('⚠️ Skipping missing .fbm texture:', url);
+    return ''; // skip loading
+  }
+  return url;
+});
+
+  const loader=new FBXLoader(manager);
+  const fbx=await loader.loadAsync(FBX_BASE+encodeURIComponent(DEFAULT_IDLE)+".fbx");
   fbx.scale.setScalar(1);
   applyGhostMaterial(fbx);
   scene.add(fbx);
 
-  model = fbx;
-  mixer = new THREE.AnimationMixer(model);
+  model=fbx;
+  mixer=new THREE.AnimationMixer(model);
 
-  // Center the model
-  const box = new THREE.Box3().setFromObject(model);
-  const center = box.getCenter(new THREE.Vector3());
-  const size = box.getSize(new THREE.Vector3());
+  const box=new THREE.Box3().setFromObject(model);
+  const center=box.getCenter(new THREE.Vector3());
+  const size=box.getSize(new THREE.Vector3());
   model.position.sub(center);
+  camera.lookAt(0,size.y*0.5,0);
 
-  // --- New camera fix ---
-  const distance = Math.min(Math.max(Math.max(size.x, size.y, size.z) * 1.5, 3), 25); // between 3 and 25
-  camera.position.set(0, size.y * 0.6, distance);
-  camera.lookAt(0, size.y * 0.4, 0);
-
-  // Optional: adjust OrbitControls if present
-  if (typeof controls !== 'undefined') {
-    controls.target.set(0, size.y * 0.4, 0);
-    controls.minDistance = 2;
-    controls.maxDistance = 50;
-    controls.update();
-  }
-
-  console.log("🎥 Camera positioned at:", camera.position);
+// --- Camera auto-position fix ---
+const distance = Math.min(Math.max(Math.max(size.x, size.y, size.z) * 1.5, 3), 25);
+camera.position.set(0, size.y * 0.6, distance);
+camera.lookAt(0, size.y * 0.4, 0);
+if (typeof controls !== 'undefined') {
+  controls.target.set(0, size.y * 0.4, 0);
+  controls.minDistance = 2;
+  controls.maxDistance = 50;
+  controls.update();
 }
+console.log("🎥 Camera positioned at:", camera.position);
 
-
+}
 
 // ---------- Animations (preload + queued plays) ----------
 async function loadClip(name){
   if(cache[name]) return cache[name];
   try{
-    const loader=new FBXLoader();
+    
+// --- Texture manager to skip .fbm warnings ---
+const manager = new THREE.LoadingManager();
+manager.setURLModifier((url) => {
+  if (url.endsWith('.fbm') || url.includes('.fbm/')) {
+    console.warn('⚠️ Skipping missing .fbm texture:', url);
+    return ''; // skip loading
+  }
+  return url;
+});
+
+  const loader=new FBXLoader(manager);
     const fbx=await loader.loadAsync(FBX_BASE+encodeURIComponent(name)+".fbx");
     const clip=fbx.animations?.[0];
     if(clip){ cache[name]=clip; availableClips.add(name); }
