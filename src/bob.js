@@ -610,3 +610,140 @@ async function initBob(){
 }
 
 setTimeout(initBob,700);
+
+
+
+// === Cinematic Debug Ultimate Edition ===
+// Adds: safe camera placement, early debug (after idle), small top-right loader bar, mouse-look toggle, live HUD, smooth movement.
+(function() {
+  try {
+    // --- Compact Loader Bar ---
+    const styleLoaderBar = () => {
+      const loaderBar = document.querySelector('.loader-bar,#bobBar');
+      if (loaderBar) {
+        loaderBar.style.position = 'fixed';
+        loaderBar.style.top = '15px';
+        loaderBar.style.right = '20px';
+        loaderBar.style.height = '6px';
+        loaderBar.style.width = '150px';
+        loaderBar.style.borderRadius = '4px';
+        loaderBar.style.background = 'linear-gradient(90deg,#00ff88,#0099ff)';
+        loaderBar.style.zIndex = '9999';
+        loaderBar.style.opacity = '0.9';
+      }
+    };
+    document.addEventListener('DOMContentLoaded', styleLoaderBar);
+    setTimeout(styleLoaderBar, 800);
+
+    // --- Debug State ---
+    let debugMode = false;
+    let mouseLook = false;
+    const keys = {};
+    let moveSpeed = 10, rotSpeed = 0.02;
+    let prevMouseX = 0, prevMouseY = 0;
+
+    // --- Debug UI ---
+    const debugUI = document.createElement('div');
+    debugUI.style.position = 'fixed';
+    debugUI.style.bottom = '20px';
+    debugUI.style.right = '20px';
+    debugUI.style.padding = '10px 15px';
+    debugUI.style.background = 'rgba(0,0,0,0.85)';
+    debugUI.style.color = '#00ff88';
+    debugUI.style.fontFamily = 'monospace';
+    debugUI.style.fontSize = '13px';
+    debugUI.style.borderRadius = '10px';
+    debugUI.style.display = 'none';
+    debugUI.style.zIndex = '9999';
+    debugUI.innerHTML = '<b>🧭 Debug Mode</b><br>' +
+      'D = Toggle Debug<br>' +
+      'M = Mouse-Look<br>' +
+      'W/S = Forward/Back<br>' +
+      'A/D = Left/Right<br>' +
+      '↑/↓ = Up/Down<br>' +
+      '←/→ = Rotate<br>' +
+      'L = Toggle Light<br>' +
+      '1–9 = Play Anim<br><br>' +
+      '<div id="camInfo">📷 Pos: (0,0,0) | RotY: 0</div>';
+    document.body.appendChild(debugUI);
+    const camInfo = debugUI.querySelector('#camInfo');
+
+    // --- Key Input ---
+    window.addEventListener('keydown', (e) => {
+      keys[e.code] = true;
+
+      if (e.code === 'KeyD' && !e.repeat) {
+        debugMode = !debugMode;
+        debugUI.style.display = debugMode ? 'block' : 'none';
+        console.log(debugMode ? '🧭 Debug Mode: ON' : '🧭 Debug Mode: OFF');
+      }
+      if (!debugMode) return;
+
+      if (e.code === 'KeyM' && !e.repeat) {
+        mouseLook = !mouseLook;
+        console.log(mouseLook ? '🖱️ Mouse-Look ENABLED' : '🖱️ Mouse-Look DISABLED');
+      }
+      if (e.code === 'KeyL' && typeof dirLight !== 'undefined') {
+        dirLight.visible = !dirLight.visible;
+        console.log('💡 Light:', dirLight.visible ? 'ON' : 'OFF');
+      }
+      if (e.code.startsWith('Digit')) {
+        const idx = parseInt(e.code.replace('Digit', ''), 10);
+        const clipName = [...availableClips][idx - 1];
+        if (clipName) {
+          console.log('🎞️ Playing animation:', clipName);
+          playClip(clipName);
+        }
+      }
+    });
+    window.addEventListener('keyup', (e) => delete keys[e.code]);
+
+    // --- Mouse Look ---
+    document.addEventListener('mousemove', (e) => {
+      if (!debugMode || !mouseLook || !window.camera) return;
+      const dx = e.movementX || e.clientX - prevMouseX;
+      const dy = e.movementY || e.clientY - prevMouseY;
+      prevMouseX = e.clientX; prevMouseY = e.clientY;
+      window.camera.rotation.y -= dx * 0.002;
+      window.camera.rotation.x -= dy * 0.002;
+    });
+
+    // --- Update Camera ---
+    const updateDebug = (delta) => {
+      if (!debugMode || !window.camera || !window.THREE) return;
+      const dir = new THREE.Vector3();
+      window.camera.getWorldDirection(dir);
+      const right = new THREE.Vector3().crossVectors(dir, window.camera.up).normalize();
+      if (keys['KeyW']) window.camera.position.addScaledVector(dir, moveSpeed * delta * 60);
+      if (keys['KeyS']) window.camera.position.addScaledVector(dir, -moveSpeed * delta * 60);
+      if (keys['KeyA']) window.camera.position.addScaledVector(right, -moveSpeed * delta * 60);
+      if (keys['KeyD']) window.camera.position.addScaledVector(right, moveSpeed * delta * 60);
+      if (keys['ArrowUp']) window.camera.position.y += moveSpeed * delta * 60;
+      if (keys['ArrowDown']) window.camera.position.y -= moveSpeed * delta * 60;
+      if (keys['ArrowLeft']) window.camera.rotation.y += rotSpeed * delta * 60;
+      if (keys['ArrowRight']) window.camera.rotation.y -= rotSpeed * delta * 60;
+      camInfo.textContent = `📷 Pos: X=${window.camera.position.x.toFixed(2)}, Y=${window.camera.position.y.toFixed(2)}, Z=${window.camera.position.z.toFixed(2)} | RotY: ${window.camera.rotation.y.toFixed(2)}`;
+    };
+    window.__BOB_DEBUG_UPDATE__ = updateDebug;
+
+    // --- Animate Hook Patch ---
+    const tryPatch = () => {
+      if (typeof window.animate === 'function' && !window.__BOB_DEBUG_PATCHED__) {
+        const orig = window.animate;
+        window.animate = function() {
+          requestAnimationFrame(window.animate);
+          const delta = window.clock ? window.clock.getDelta() : 1/60;
+          if (typeof window.__BOB_DEBUG_UPDATE__ === 'function') window.__BOB_DEBUG_UPDATE__(delta);
+          if (window.mixer && typeof window.mixer.update === 'function') window.mixer.update(delta);
+          if (window.renderer && window.scene && window.camera) window.renderer.render(window.scene, window.camera);
+        };
+        window.__BOB_DEBUG_PATCHED__ = true;
+        console.log('🧭 Debug loop patched');
+      } else setTimeout(tryPatch, 200);
+    };
+    tryPatch();
+  } catch (err) {
+    console.warn('Debug init failed', err);
+  }
+})();
+// === End Cinematic Debug Ultimate Edition ===
